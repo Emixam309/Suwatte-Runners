@@ -1,0 +1,1961 @@
+(function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.STTPackage = f()}})(function(){var define,module,exports;return (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.healthCheck = exports.getJwt = exports.getApiKey = exports.getHost = exports.getUser = void 0;
+const _1 = require(".");
+const store_1 = require("../store");
+const utils_1 = require("../utils");
+const getUser = async () => {
+    const user = await (0, _1.request)({ url: await (0, utils_1.genURL)("/api/Account") });
+    return user;
+};
+exports.getUser = getUser;
+const getHost = async () => {
+    const host = await store_1.KavitaStore.host();
+    if (!host)
+        throw new Error("You have not defined a server url!");
+    if (host.endsWith("/"))
+        return host.slice(0, -1);
+    return host;
+};
+exports.getHost = getHost;
+const getApiKey = async () => {
+    const apiKey = await store_1.KavitaStore.apiKey();
+    if (!apiKey)
+        throw new Error("You have not defined an API Key!");
+    return apiKey;
+};
+exports.getApiKey = getApiKey;
+const getJwt = async () => {
+    const apiKey = await (0, exports.getApiKey)();
+    const jwt = await store_1.KavitaStore.jwt();
+    if (!jwt) {
+        const res = await (0, _1.simpleReq)({
+            url: await (0, utils_1.genURL)("/api/Plugin/authenticate"),
+            method: "POST",
+            params: { apiKey: apiKey, pluginName: "Suwatte" },
+        });
+        const newJwt = res.token;
+        await SecureStore.set("jwt", newJwt);
+        return newJwt;
+    }
+    return jwt;
+};
+exports.getJwt = getJwt;
+const healthCheck = async () => {
+    return await (0, _1.simpleReq)({ url: await (0, utils_1.genURL)("/api/Health") });
+};
+exports.healthCheck = healthCheck;
+
+},{".":2,"../store":12,"../utils":15}],2:[function(require,module,exports){
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+__exportStar(require("./auth"), exports);
+__exportStar(require("./request"), exports);
+__exportStar(require("./library"), exports);
+
+},{"./auth":1,"./library":3,"./request":4}],3:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getRecommendationGenre = exports.getRecentlyAddedSeries = exports.getRecentlyUpdatedSeries = exports.getOnDeckSeries = exports.getDashboardInfo = exports.getSeriesMetadata = exports.getSeriesReadingProfile = exports.getSeries = exports.getSeriesChapters = exports.getLibrarySeries = exports.getLibraries = void 0;
+const _1 = require(".");
+const utils_1 = require("../utils");
+/**
+ * Returns all libraries.
+ */
+const getLibraries = async () => {
+    return await (0, _1.request)({
+        url: await (0, utils_1.genURL)("/api/Library/libraries"),
+    });
+};
+exports.getLibraries = getLibraries;
+/**
+ * Gets All Books within a library
+ */
+const getLibrarySeries = async (libraryId, 
+// sort: string,
+// filters: FilterV2Dto,
+page = 1
+// search?: string
+) => {
+    const librarySeries = await (0, _1.request)({
+        url: await (0, utils_1.genURL)("/api/Series/v2"),
+        method: "POST",
+        body: {
+            statements: libraryId
+                ? [{ field: 19, value: libraryId.toString(), comparison: 0 }]
+                : [],
+            combination: 1,
+            sortOptions: { isAscending: true, sortField: 1 },
+        },
+        params: {
+            PageNumber: page - 1,
+            PageSize: utils_1.RESULT_COUNT,
+        },
+    });
+    return librarySeries;
+};
+exports.getLibrarySeries = getLibrarySeries;
+/**
+ * Get Books on deck
+ */
+// export const getBooksOnDeck = async (libraryId: string | null) => {
+//   const { content: data } = await request<PageBookDto>({
+//     url: await genURL("/api/Series/on-deck"),
+//     params: {
+//       ...(libraryId && { libraryId }),
+//     },
+//   })
+//   const host = await getHost()
+//   const highlights: Highlight[] = (data ?? []).map((book) =>
+//     seriesToHighlight(book, host)
+//   )
+//   return highlights
+// }
+/**
+ * Gets all series within a library
+ */
+// export const getSeriesForLibraryWithState = async (
+//   library_id: string | null,
+//   state: string
+// ) => {
+//   const body = {
+//     url: await genURL(`/api/v1/series/${state}`),
+//     params: {
+//       ...(library_id && { library_id }),
+//     },
+//   }
+//   const { content: data } = await request<PageSeriesDto>(body)
+//   return data ?? []
+// }
+// export const getSeriesForLibrary = async (
+//   library_id: string | null,
+//   sort: string,
+//   filters: FilterItems,
+//   page: number,
+//   search?: string
+// ) => {
+//   const config = {
+//     url: await genURL(`/api/v1/series`),
+//     params: {
+//       ...(library_id && { library_id }),
+//       sort,
+//       ...filters,
+//       page: page - 1,
+//       size: RESULT_COUNT,
+//       search,
+//     },
+//   }
+//   const { content: data } = await request<PageSeriesDto>(config)
+//   return data ?? []
+// }
+/**
+ * Get books within a series
+ */
+// export const getBooksForSeries = async (
+//   series: string,
+//   sort: string,
+//   filters: FilterItems,
+//   page: number
+// ) => {
+//   const { content: data, last } = await request<PageBookDto>({
+//     url: await genURL(`/api/v1/series/${series}/books`),
+//     params: {
+//       page: page - 1,
+//       size: RESULT_COUNT,
+//       sort,
+//       ...filters,
+//     },
+//   })
+//   const host = await getHost()
+//   const items: Highlight[] = (data ?? []).map((book) =>
+//     seriesToHighlight(book, host)
+//   )
+//   return {
+//     isLastPage: last ?? true,
+//     items,
+//   }
+// }
+const getSeriesChapters = async (series) => {
+    const seriesDetail = await (0, _1.request)({
+        url: await (0, utils_1.genURL)(`/api/Series/series-detail`),
+        params: {
+            seriesId: series,
+        },
+    });
+    const chapters = [
+        ...(seriesDetail.chapters ?? []),
+        ...(seriesDetail.specials ?? []),
+    ].reverse();
+    return { chapters, volumes: seriesDetail.volumes };
+};
+exports.getSeriesChapters = getSeriesChapters;
+const getSeries = async (id) => {
+    return (0, _1.request)({
+        url: await (0, utils_1.genURL)(`/api/Series/${id}`),
+    });
+};
+exports.getSeries = getSeries;
+const getSeriesReadingProfile = async (id) => {
+    return (0, _1.request)({
+        url: await (0, utils_1.genURL)(`/api/reading-profile/${id}`),
+    });
+};
+exports.getSeriesReadingProfile = getSeriesReadingProfile;
+const getSeriesMetadata = async (id) => {
+    return (0, _1.request)({
+        url: await (0, utils_1.genURL)(`/api/Series/metadata`),
+        params: {
+            seriesId: id,
+        },
+    });
+};
+exports.getSeriesMetadata = getSeriesMetadata;
+// export const getBooks = async (
+//   series: string,
+//   size: number,
+//   sort: string = buildSort(Sort.Number, false)
+// ) => {
+//   const { content: data } = await request<PageBookDto>({
+//     url: await genURL(`/api/v1/series/${series}/books`),
+//     params: {
+//       page: 0,
+//       size,
+//       sort,
+//     },
+//   })
+//   return data ?? []
+// }
+const getDashboardInfo = async () => {
+    return (0, _1.request)({
+        url: await (0, utils_1.genURL)("/api/stream/dashboard"),
+    });
+};
+exports.getDashboardInfo = getDashboardInfo;
+const getOnDeckSeries = async (libraryId) => {
+    return (0, _1.request)({
+        url: await (0, utils_1.genURL)("/api/Series/on-deck"),
+        method: "POST",
+        params: {
+            ...(libraryId && { libraryId }),
+        },
+    });
+};
+exports.getOnDeckSeries = getOnDeckSeries;
+const getRecentlyUpdatedSeries = async (libraryId) => {
+    const items = await (0, _1.request)({
+        url: await (0, utils_1.genURL)("/api/series/recently-updated-series"),
+        method: "POST",
+        params: {
+            ...(libraryId && { libraryId }),
+            pageSize: utils_1.RESULT_COUNT,
+            pageNumber: 0,
+        },
+    });
+    const series = await Promise.all((items ?? []).map((item) => (0, utils_1.recentlyAddedItemToSeries)(item)));
+    return series;
+};
+exports.getRecentlyUpdatedSeries = getRecentlyUpdatedSeries;
+const getRecentlyAddedSeries = async (libraryId) => {
+    return (0, _1.request)({
+        url: await (0, utils_1.genURL)("/api/series/recently-added-v2"),
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: {},
+        params: {
+            ...(libraryId && { libraryId }),
+            pageSize: utils_1.RESULT_COUNT,
+            pageNumber: 0,
+        },
+    });
+};
+exports.getRecentlyAddedSeries = getRecentlyAddedSeries;
+const getRecommendationGenre = async (genre) => {
+    return (0, _1.request)({
+        url: await (0, utils_1.genURL)(`/api/recommended/more-in`),
+    });
+};
+exports.getRecommendationGenre = getRecommendationGenre;
+
+},{".":2,"../utils":15}],4:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.request = request;
+exports.simpleReq = simpleReq;
+const auth_1 = require("./auth");
+async function request(req) {
+    const host = await (0, auth_1.getHost)();
+    const jwt = await (0, auth_1.getJwt)();
+    if (!host)
+        throw new Error("You have not defined a server url!");
+    if (!jwt)
+        throw new Error("You are not signed in!");
+    const client = new NetworkClient();
+    const { data } = await client.request({
+        ...req,
+        headers: {
+            ...req.headers,
+            ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
+        },
+        transformResponse: async (res) => {
+            if (res.status === 401) {
+                throw new Error("Unauthorized: JWT may be invalid or expired");
+            }
+            return res;
+        },
+    });
+    if (!data)
+        return {};
+    const object = JSON.parse(data);
+    return object;
+}
+async function simpleReq(req) {
+    const client = new NetworkClient();
+    const { data } = await client.request(req);
+    if (!data)
+        return {};
+    try {
+        const object = JSON.parse(data);
+        return object;
+    }
+    catch {
+        return data;
+    }
+}
+
+},{"./auth":1}],5:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.KavitaAuthentication = void 0;
+const auth_1 = require("../api/auth");
+const store_1 = require("../store");
+exports.KavitaAuthentication = {
+    getAuthenticatedUser: async () => {
+        const host = await store_1.KavitaStore.host();
+        if (!host)
+            throw new Error("You have not set your server url. You must do this to use the runner");
+        const authenticated = await store_1.KavitaStore.jwt();
+        if (!authenticated)
+            return null;
+        try {
+            const data = await (0, auth_1.getUser)();
+            return {
+                handle: data.email,
+            };
+        }
+        catch (err) {
+            console.error(err.message);
+            await SecureStore.remove("jwt");
+        }
+        return null;
+    },
+    handleUserSignOut: async () => {
+        throw "Not ready";
+    },
+    // handleBasicAuth: async (identifier, password) => {
+    //   const credentials = {
+    //     username: identifier,
+    //     password,
+    //   }
+    //   const client = new NetworkClient()
+    //   const { data: response } = await client.request({
+    //     url: await genURL("/api/Account/login"),
+    //     method: "POST",
+    //     body: {
+    //       ...credentials,
+    //       apiKey: await getApiKey(),
+    //     },
+    //   })
+    //   console.log(response)
+    //   // Try Fetching User to verify
+    //   await client.request({
+    //     url: await genURL("/api/Account"),
+    //   })
+    //   // Set Props
+    //   await ObjectStore.set("authenticated", true)
+    //   await SecureStore.set("credentials", credentials)
+    // },
+};
+
+},{"../api/auth":1,"../store":12}],6:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.KavitaChapterEvent = void 0;
+const api_1 = require("../api");
+const utils_1 = require("../utils");
+exports.KavitaChapterEvent = {
+    onChaptersMarked: async function (seriesId, chapterIds, completed) {
+        const promises = chapterIds.map((chapterId) => markAsRead(Number(seriesId), Number(chapterId), completed));
+        const state = await Promise.allSettled(promises);
+        const failing = state.filter((v) => v.status === "rejected").length;
+        if (failing) {
+            console.error(`Failed to mark ${failing} Books`);
+        }
+    },
+    onChapterRead: async function (seriesId, chapterId) {
+        return markAsRead(Number(seriesId), Number(chapterId));
+    },
+    async onPageRead(seriesId, chapterId, page) {
+        return (0, api_1.request)({
+            url: await (0, utils_1.genURL)(`/api/Reader/progress`),
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: {
+                seriesId: Number(seriesId),
+                chapterId: Number(chapterId),
+                pageNum: page,
+            },
+        });
+    },
+};
+const markAsRead = async (seriesId, chapterId, completed = true) => {
+    await (0, api_1.request)({
+        url: await (0, utils_1.genURL)(`/api/Reader/progress`),
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: {
+            seriesId: seriesId,
+            chapterId: chapterId,
+            pageNum: completed ? Infinity : -1,
+        },
+    });
+};
+
+},{"../api":2,"../utils":15}],7:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.KavitaContentSource = void 0;
+const api_1 = require("../api");
+const utils_1 = require("../utils");
+exports.KavitaContentSource = {
+    getContent: async function (contentId) {
+        // * NOTE: `contentId` in our case will always refer to Series and not Books.
+        const series = await (0, api_1.getSeries)(contentId);
+        const seriesMetadata = await (0, api_1.getSeriesMetadata)(contentId);
+        const readingProfile = await (0, api_1.getSeriesReadingProfile)(contentId);
+        return (0, utils_1.detailedSeriesToContent)(series, seriesMetadata, readingProfile);
+    },
+    getChapters: async function (contentId) {
+        const { chapters, volumes } = await (0, api_1.getSeriesChapters)(contentId);
+        const host = await (0, api_1.getHost)();
+        const apiKey = await (0, api_1.getApiKey)();
+        const items = (chapters ?? []).map((chapter, index) => (0, utils_1.KavitaChapterToChapter)(chapter, volumes ?? [], host, apiKey, index));
+        return items;
+    },
+    getChapterData: async function (contentId, chapterId) {
+        const host = await (0, api_1.getHost)();
+        const apiKey = await (0, api_1.getApiKey)();
+        const chapter = await (0, api_1.request)({
+            url: `${host}/api/Chapter`,
+            params: {
+                chapterId: chapterId,
+            },
+        });
+        const pages = [];
+        for (let page = 1; page <= (chapter.pages ?? 0); page++) {
+            pages.push({
+                url: `${host}/api/Reader/image?chapterId=${chapterId}&page=${page}&apiKey=${apiKey}`,
+            });
+        }
+        return {
+            pages,
+        };
+    },
+};
+
+},{"../api":2,"../utils":15}],8:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.KavitaDirectoryHandler = void 0;
+const utils_1 = require("../utils");
+const api_1 = require("../api");
+const store_1 = require("../store");
+/**
+ * Implementation of the DirectoryHandler Methods
+ */
+exports.KavitaDirectoryHandler = {
+    getDirectory: function (request) {
+        return fetchDirectory(request);
+    },
+    getDirectoryConfig: async function (_) {
+        return buildDirectoryConfig();
+    },
+};
+/**
+ * Builds the Directory View Sort Options & Filters
+ */
+function buildDirectoryConfig() {
+    return {
+        searchable: true,
+        filters: utils_1.FilterOptions,
+        sort: {
+            options: utils_1.SortOptions,
+            canChangeOrder: true,
+        },
+    };
+}
+async function fetchDirectory(request) {
+    const filters = request.filters ?? {};
+    const seriesId = request.context?.seriesId;
+    const libraryId = request.context?.libraryId;
+    const host = await (0, api_1.getHost)();
+    const apiKey = await (0, api_1.getApiKey)();
+    if (!host) {
+        throw new Error("Host not defined");
+    }
+    const asTitle = await store_1.KavitaStore.openSeriesAsTitle();
+    if (seriesId) {
+        const sort = (0, utils_1.convertSort)(request.sort?.id) ?? utils_1.Sort.Number;
+        const chapters = (await (0, api_1.getSeriesChapters)(seriesId
+        // buildSort(sort, request.sort?.ascending),
+        // filters,
+        // request.page
+        )).chapters.map((chapter) => (0, utils_1.chapterToHighlight)(chapter, host, apiKey));
+        return {
+            results: chapters,
+            isLastPage: chapters.length < utils_1.RESULT_COUNT,
+        };
+    }
+    else if (libraryId) {
+        const sort = (0, utils_1.convertSort)(request.sort?.id) ?? utils_1.Sort.DateUpdated;
+        const results = (await (0, api_1.getLibrarySeries)(libraryId, 
+        // buildSort(sort, request.sort?.ascending),
+        // filters,
+        request.page)).map((v) => (0, utils_1.seriesToHighlight)(v, host, apiKey, !(asTitle ?? false)));
+        return {
+            results,
+            isLastPage: results.length < utils_1.RESULT_COUNT,
+        };
+    }
+    const isSeriesDirectory = request.context?.isSeriesDirectory ?? false;
+    if (isSeriesDirectory) {
+        const sort = (0, utils_1.convertSort)(request.sort?.id) ?? utils_1.Sort.DateUpdated;
+        const results = (await (0, api_1.getLibrarySeries)(libraryId, 
+        // buildSort(sort, request.sort?.ascending),
+        // filters,
+        request.page)).map((v) => (0, utils_1.seriesToHighlight)(v, host, apiKey, !(asTitle ?? false)));
+        return {
+            results,
+            isLastPage: results.length < utils_1.RESULT_COUNT,
+        };
+    }
+    // } else {
+    //   const sort = convertSort(request.sort?.id) ?? Sort.DateAdded;
+    //   const results = (
+    //     await getSeriesChapters(
+    //       series:
+    //     )
+    //     )
+    //   ).map((v) => chapterToHighlight(v, host, apiKey));
+    return {
+        results: [],
+        isLastPage: true,
+    };
+}
+
+},{"../api":2,"../store":12,"../utils":15}],9:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.KavitaPageLinkResolver = void 0;
+const daisuke_1 = require("@suwatte/daisuke");
+const api_1 = require("../api");
+const utils_1 = require("../utils");
+const store_1 = require("../store");
+exports.KavitaPageLinkResolver = {
+    getSectionsForPage: async function (link) {
+        switch (link.id) {
+            case "all":
+            case "home":
+            case "library": {
+                return buildBrowseLibrarySections();
+            }
+        }
+        throw new Error(`No Handler Providing sections for ${link.id}`);
+    },
+    resolvePageSection: function (link, sectionID) {
+        switch (link.id) {
+            case "all":
+            case "home":
+            case "library": {
+                const libraryId = link.context?.libraryId ?? null;
+                return resolveLibrarySection(libraryId, sectionID);
+            }
+        }
+        throw new Error(`No Handler Resolving ${link.id}`);
+    },
+};
+// Library Sections
+async function buildBrowseLibrarySections() {
+    const sections = [];
+    const dashboardSections = await (0, api_1.getDashboardInfo)();
+    for (const dashSection of dashboardSections) {
+        sections.push({
+            id: dashSection.name,
+            title: (0, utils_1.getSectionTitle)(dashSection.name),
+            style: daisuke_1.SectionStyle.DEFAULT,
+        });
+    }
+    return sections;
+}
+async function resolveLibrarySection(libraryId, sectionKey) {
+    let items = [];
+    const host = await (0, api_1.getHost)();
+    const apiKey = await (0, api_1.getApiKey)();
+    const convertSeriesToItems = async (key) => {
+        const openAsTitle = await store_1.KavitaStore.openSeriesAsTitle();
+        const series = await (0, api_1.getLibrarySeries)(libraryId);
+        const highlights = (series ?? []).map((data) => (0, utils_1.seriesToHighlight)(data, host, apiKey, !openAsTitle));
+        return highlights;
+    };
+    switch (sectionKey) {
+        case "search_directory": {
+            const highlights = [
+                (0, daisuke_1.Generate)({
+                    title: "All Books",
+                    cover: "",
+                    id: "all_books",
+                    link: {
+                        request: {
+                            page: 1,
+                            context: {
+                                isSeriesDirectory: false,
+                                libraryId,
+                            },
+                        },
+                    },
+                }),
+                (0, daisuke_1.Generate)({
+                    title: "All Series",
+                    cover: "",
+                    id: "all_series",
+                    link: {
+                        request: {
+                            page: 1,
+                            context: {
+                                isSeriesDirectory: true,
+                                libraryId,
+                            },
+                        },
+                    },
+                }),
+            ];
+            items = highlights;
+            break;
+        }
+        // case "keep_reading": {
+        //   const highlights = await getBooksForLibrary(
+        //     libraryId,
+        //     buildSort(Sort.ReadDate, false),
+        //     { read_status: [ReadStatus.InProgress] }
+        //   );
+        //   items = highlights;
+        //   break;
+        // }
+        case "on-deck": {
+            const series = await (0, api_1.getOnDeckSeries)(libraryId);
+            items = series.map((data) => (0, utils_1.seriesToHighlight)(data, host, apiKey, false));
+            break;
+        }
+        case "recently-updated": {
+            const series = await (0, api_1.getRecentlyUpdatedSeries)(libraryId);
+            items = series.map((data) => (0, utils_1.seriesToHighlight)(data, host, apiKey, false));
+            break;
+        }
+        case "newly-added": {
+            const series = await (0, api_1.getRecentlyAddedSeries)(libraryId);
+            items = series.map((data) => (0, utils_1.seriesToHighlight)(data, host, apiKey, false));
+            break;
+        }
+    }
+    return { items };
+}
+
+},{"../api":2,"../store":12,"../utils":15,"@suwatte/daisuke":16}],10:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.KavitaSetupProvider = void 0;
+const daisuke_1 = require("@suwatte/daisuke");
+const store_1 = require("../store");
+const api_1 = require("../api");
+exports.KavitaSetupProvider = {
+    getSetupMenu: async function () {
+        return {
+            sections: [
+                {
+                    header: "Server URL",
+                    children: [
+                        (0, daisuke_1.UITextField)({
+                            id: "host",
+                            title: "Server URL",
+                            value: (await store_1.KavitaStore.host()) ?? "",
+                        }),
+                    ],
+                },
+                {
+                    header: "API Key",
+                    children: [
+                        (0, daisuke_1.UITextField)({
+                            id: "apiKey",
+                            title: "API Key",
+                            value: (await store_1.KavitaStore.apiKey()) ?? "",
+                        }),
+                    ],
+                }
+            ],
+        };
+    },
+    validateSetupForm: async function ({ host, apiKey, }) {
+        if (!host.endsWith("/"))
+            host += "/";
+        await ObjectStore.set("host", host);
+        await ObjectStore.set("apiKey", apiKey);
+        try {
+            await (0, api_1.healthCheck)();
+        }
+        catch (error) {
+            console.error(`${error}`);
+            throw new Error("Cannot Connect to Kavita Server: " + error);
+        }
+    },
+    isRunnerSetup: async function () {
+        return {
+            state: !!(await store_1.KavitaStore.host()),
+        };
+    },
+};
+
+},{"../api":2,"../store":12,"@suwatte/daisuke":16}],11:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Target = void 0;
+const daisuke_1 = require("@suwatte/daisuke");
+const contentSource_1 = require("./impl/contentSource");
+const auth_1 = require("./impl/auth");
+const setup_1 = require("./impl/setup");
+const directoryHandler_1 = require("./impl/directoryHandler");
+const pageLinkResolver_1 = require("./impl/pageLinkResolver");
+const chapterEvent_1 = require("./impl/chapterEvent");
+// Info
+const info = {
+    id: "org.kavita",
+    name: "Kavita",
+    version: 0.01,
+    minSupportedAppVersion: "6.0.0",
+    thumbnail: "kavita.png",
+    website: "https://www.kavitareader.com",
+    supportedLanguages: ["UNIVERSAL"],
+    rating: daisuke_1.CatalogRating.SAFE,
+};
+// Config
+const config = {
+    disableChapterDataCaching: false, // Refetch image list each time
+    disableLibraryActions: false, // Disable being able to add to user library
+    disableContentLinking: true,
+    disableCustomThumbnails: true,
+    disableLanguageFlags: true,
+    disableMigrationDestination: true,
+    disableTrackerLinking: true,
+    disableUpdateChecks: true,
+    allowsMultipleInstances: true,
+    requiresAuthenticationToAccessContent: true,
+};
+exports.Target = {
+    info,
+    config,
+    ...auth_1.KavitaAuthentication,
+    ...contentSource_1.KavitaContentSource,
+    ...setup_1.KavitaSetupProvider,
+    ...directoryHandler_1.KavitaDirectoryHandler,
+    // ...KavitaPageProvider,
+    ...pageLinkResolver_1.KavitaPageLinkResolver,
+    ...chapterEvent_1.KavitaChapterEvent,
+};
+
+},{"./impl/auth":5,"./impl/chapterEvent":6,"./impl/contentSource":7,"./impl/directoryHandler":8,"./impl/pageLinkResolver":9,"./impl/setup":10,"@suwatte/daisuke":16}],12:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.KavitaStore = void 0;
+exports.KavitaStore = {
+    host: () => ObjectStore.string("host"),
+    apiKey: () => ObjectStore.string("apiKey"),
+    credentials: () => SecureStore.string("credentials"),
+    jwt: () => SecureStore.string("jwt"),
+    authenticated: () => ObjectStore.get("authenticated"),
+    openSeriesAsTitle: () => ObjectStore.boolean("openAsTitle"),
+};
+
+},{}],13:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.FilterOptions = exports.ReadStatus = exports.SeriesStatus = exports.RESULT_COUNT = exports.SortOptions = exports.Sort = exports.DirectoryType = void 0;
+const daisuke_1 = require("@suwatte/daisuke");
+var DirectoryType;
+(function (DirectoryType) {
+    DirectoryType["Series"] = "SERIES";
+    DirectoryType["Library"] = "LIBRARY";
+})(DirectoryType || (exports.DirectoryType = DirectoryType = {}));
+var Sort;
+(function (Sort) {
+    Sort["Name"] = "name";
+    Sort["DateAdded"] = "created";
+    Sort["DateUpdated"] = "lastModifiedDate";
+    Sort["ReleaseDate"] = "lastChapterAdded";
+    Sort["BooksCount"] = "booksCount";
+    Sort["ReadDate"] = "latestReadDate";
+    Sort["Number"] = "metadata.numberSort";
+})(Sort || (exports.Sort = Sort = {}));
+exports.SortOptions = [
+    {
+        id: Sort.Name,
+        title: "Name",
+    },
+    {
+        id: Sort.DateAdded,
+        title: "Date Added",
+    },
+    {
+        id: Sort.DateUpdated,
+        title: "Date Updated",
+    },
+    {
+        id: Sort.ReleaseDate,
+        title: "Release Date",
+    },
+    {
+        id: Sort.BooksCount,
+        title: "Books Count",
+    },
+];
+exports.RESULT_COUNT = 30;
+var SeriesStatus;
+(function (SeriesStatus) {
+    SeriesStatus["Ended"] = "ENDED";
+    SeriesStatus["Ongoing"] = "ONGOING";
+    SeriesStatus["Abandoned"] = "ABANDONED";
+    SeriesStatus["Hiatus"] = "HIATUS";
+})(SeriesStatus || (exports.SeriesStatus = SeriesStatus = {}));
+var ReadStatus;
+(function (ReadStatus) {
+    ReadStatus["Unread"] = "UNREAD";
+    ReadStatus["InProgress"] = "IN_PROGRESS";
+    ReadStatus["Read"] = "READ";
+})(ReadStatus || (exports.ReadStatus = ReadStatus = {}));
+exports.FilterOptions = [
+    {
+        id: "read_status",
+        title: "Read Status",
+        type: daisuke_1.FilterType.MULTISELECT,
+        options: [
+            {
+                id: ReadStatus.Unread,
+                title: "Unread",
+            },
+            {
+                id: ReadStatus.InProgress,
+                title: "In Progress",
+            },
+            {
+                id: ReadStatus.Read,
+                title: "Read",
+            },
+        ],
+    },
+    {
+        id: "status",
+        title: "Series Status",
+        type: daisuke_1.FilterType.MULTISELECT,
+        options: [
+            {
+                id: SeriesStatus.Ended,
+                title: "Ended",
+            },
+            {
+                id: SeriesStatus.Ongoing,
+                title: "Ongoing",
+            },
+            {
+                id: SeriesStatus.Abandoned,
+                title: "Abandoned",
+            },
+            {
+                id: SeriesStatus.Hiatus,
+                title: "Hiatus",
+            },
+        ],
+    },
+];
+
+},{"@suwatte/daisuke":16}],14:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getSectionTitle = exports.recentlyAddedItemToSeries = exports.detailedSeriesToContent = exports.KavitaChapterToChapter = exports.chapterToHighlight = exports.seriesToHighlight = exports.genURL = exports.buildSort = exports.convertSort = void 0;
+const daisuke_1 = require("@suwatte/daisuke");
+const api_1 = require("../api");
+const constants_1 = require("./constants");
+// import { BookDto, SeriesDto } from "../types";
+// import { Sort } from "./constants";
+const convertSort = (val) => {
+    switch (val) {
+        case "nameSort":
+            return constants_1.Sort.Name;
+        case "created":
+            return constants_1.Sort.DateAdded;
+        case "lastModifiedDate":
+            return constants_1.Sort.DateUpdated;
+        case "booksMetadata.releaseDate":
+            return constants_1.Sort.ReleaseDate;
+        case "booksCount":
+            return constants_1.Sort.BooksCount;
+        case "readProgress.readDate":
+            return constants_1.Sort.ReadDate;
+        case "metadata.numberSort":
+            return constants_1.Sort.Number;
+        default:
+            return undefined;
+    }
+};
+exports.convertSort = convertSort;
+/**
+ * builds the sort query param using the key and its order
+ */
+const buildSort = (key, asc) => `${key},${asc ? "asc" : "desc"}`;
+exports.buildSort = buildSort;
+/**
+ * Generates a url using the user specified host
+ */
+const genURL = async (url) => {
+    return `${await (0, api_1.getHost)()}${url}`;
+};
+exports.genURL = genURL;
+const seriesToHighlight = (series, 
+// seriesMetadata: SeriesMetadataDto,
+host, apiKey, asRequest) => {
+    const cover = `${host}/api/image/series-cover?seriesId=${series.id}&apiKey=${apiKey}`;
+    // const subtitle = `${seriesMetadata.totalCount} Chapter${
+    //   seriesMetadata.totalCount != 1 ? "s" : ""
+    // }`
+    const title = series.name ?? series.originalName ?? series.localizedName ?? "Untitled";
+    return {
+        id: series.id?.toString() ?? "",
+        title: title,
+        // subtitle,
+        cover,
+        // ...(series.totalReads && series.totalReads > 0 && seriesMetadata.totalCount !== undefined && {
+        //   badge: {
+        //     color: "#0096FF",
+        //     count: seriesMetadata.totalCount - (series.totalReads ?? 0),
+        //   },
+        // }),
+        ...(asRequest && {
+            link: {
+                request: {
+                    configID: "series",
+                    page: 1,
+                    context: {
+                        seriesId: series.id,
+                    },
+                },
+            },
+        }),
+    };
+};
+exports.seriesToHighlight = seriesToHighlight;
+const chapterToHighlight = (chapter, host, apiKey) => {
+    return {
+        id: chapter.id?.toString() ?? "",
+        title: chapter.titleName ?? "Untitled",
+        subtitle: `${chapter.title} • ${chapter.pages} Pages`,
+        cover: `${host}/api/Image/chapter-cover?chapterId=${chapter.id}&apiKey=${apiKey}`,
+        acquisitionLink: `${host}/api/Download/chapter?chapterId=${chapter.id}`,
+        streamable: true,
+        // Badge if book has not been started
+        ...(chapter.pagesRead < chapter.pages && {
+            badge: {
+                color: "#49c694",
+            },
+        }),
+    };
+};
+exports.chapterToHighlight = chapterToHighlight;
+// export const seriesToContinueChapter = async (
+//   series: SeriesDto,
+//   host: string
+// ): Promise<ChapterDto> => {}
+const KavitaChapterToChapter = (chapter, volumes, host, apiKey, index) => {
+    const pages = [];
+    for (let page = 1; page <= (chapter.pages ?? 0); page++) {
+        pages.push({
+            url: `${host}/api/Reader/image?chapterId=${chapter.id}&page=${page}&apiKey=${apiKey}`,
+        });
+    }
+    const volume = volumes.find((v) => v.id === chapter.volumeId);
+    return {
+        chapterId: chapter.id?.toString(),
+        title: chapter.titleName ?? undefined,
+        date: chapter.created ? new Date(chapter.created) : new Date(1970, 0, 1),
+        number: chapter.sortOrder ?? 0,
+        volume: volume ? volume.minNumber : undefined,
+        index,
+        webUrl: chapter.webLinks?.[0],
+        thumbnail: `${host}/api/Image/chapter-cover?chapterId=${chapter.id}&apiKey=${apiKey}`,
+        language: convertLanguage(chapter.language),
+        data: {
+            pages,
+        },
+    };
+};
+exports.KavitaChapterToChapter = KavitaChapterToChapter;
+const detailedSeriesToContent = async (series, seriesMetadata, readingProfile) => {
+    const host = await (0, api_1.getHost)();
+    const apiKey = await (0, api_1.getApiKey)();
+    const cover = `${host}/api/Image/series-cover?seriesId=${series.id}&apiKey=${apiKey}`;
+    const info = [];
+    if (series.pagesRead == series.pages) {
+        info.push("Finished Reading");
+    }
+    else if (series.pagesRead == 0) {
+        info.push("Not Started");
+    }
+    else if (series.pagesRead != 0) {
+        info.push("Started Reading");
+    }
+    const properties = [];
+    const creators = [];
+    const creatorFields = ['writers', 'coverArtists', 'pencillers', 'inkers', 'colorists', 'letterers', 'editors'];
+    creatorFields.forEach((field) => {
+        const data = seriesMetadata[field];
+        if (data && data.length > 0) {
+            data.forEach((item) => {
+                const name = item.name ?? '';
+                if (name && !creators.includes(name)) {
+                    creators.push(name);
+                }
+            });
+        }
+    });
+    const metadataFields = [
+        { key: 'genres', title: 'Genres', prop: 'title' },
+        { key: 'writers', title: 'Writers', prop: 'name' },
+        { key: 'coverArtists', title: 'Cover Artists', prop: 'name' },
+        { key: 'publishers', title: 'Publishers', prop: 'name' },
+        { key: 'characters', title: 'Characters', prop: 'name' },
+        { key: 'pencillers', title: 'Pencillers', prop: 'name' },
+        { key: 'inkers', title: 'Inkers', prop: 'name' },
+        { key: 'imprints', title: 'Imprints', prop: 'name' },
+        { key: 'colorists', title: 'Colorists', prop: 'name' },
+        { key: 'letterers', title: 'Letterers', prop: 'name' },
+        { key: 'editors', title: 'Editors', prop: 'name' },
+        { key: 'translators', title: 'Translators', prop: 'name' },
+        { key: 'teams', title: 'Teams', prop: 'name' },
+        { key: 'locations', title: 'Locations', prop: 'name' },
+    ];
+    metadataFields.forEach(({ key, title, prop }) => {
+        const data = seriesMetadata[key];
+        if (data && data.length > 0) {
+            properties.push({
+                id: key.replace(/([A-Z])/g, '-$1').toLowerCase(),
+                title,
+                tags: data.map((tag) => ({
+                    id: tag.id?.toString() ?? '',
+                    title: tag[prop] ?? '',
+                })),
+            });
+        }
+    });
+    if (seriesMetadata.tags && seriesMetadata.tags.length > 0) {
+        const groupedTags = {};
+        seriesMetadata.tags.forEach((tag) => {
+            const tagTitle = tag.title ?? "";
+            if (tagTitle.includes(":")) {
+                const [parent, child] = tagTitle.split(":", 2);
+                if (!groupedTags[parent]) {
+                    groupedTags[parent] = [];
+                }
+                groupedTags[parent].push({
+                    id: tag.id?.toString() ?? "",
+                    title: child.trim(),
+                });
+            }
+            else {
+                if (!groupedTags["tags"]) {
+                    groupedTags["tags"] = [];
+                }
+                groupedTags["tags"].push({
+                    id: tag.id?.toString() ?? "",
+                    title: tagTitle,
+                });
+            }
+        });
+        Object.entries(groupedTags).forEach(([key, tags]) => {
+            properties.push({
+                id: key.toLowerCase().replace(/\s+/g, "-"),
+                title: key === "tags" ? "Tags" : key,
+                tags,
+            });
+        });
+    }
+    return {
+        title: series.name ?? "Untitled",
+        additionalTitles: [series.localizedName ?? ""],
+        summary: seriesMetadata?.summary || undefined,
+        cover,
+        creators,
+        status: convertStatus(seriesMetadata.publicationStatus),
+        info,
+        properties,
+        recommendedPanelMode: convertReadingMode(readingProfile),
+    };
+};
+exports.detailedSeriesToContent = detailedSeriesToContent;
+const recentlyAddedItemToSeries = async (item) => {
+    return await (0, api_1.getSeries)(item.seriesId.toString());
+};
+exports.recentlyAddedItemToSeries = recentlyAddedItemToSeries;
+const convertStatus = (val) => {
+    switch (val) {
+        case 0:
+            return daisuke_1.PublicationStatus.ONGOING;
+        case 1:
+            return daisuke_1.PublicationStatus.HIATUS;
+        case 3:
+            return daisuke_1.PublicationStatus.CANCELLED;
+        case 2:
+        case 4:
+            return daisuke_1.PublicationStatus.COMPLETED;
+        default:
+            return undefined;
+    }
+};
+const convertReadingMode = (readingProfile) => {
+    if (readingProfile.readerMode === 0) {
+        switch (readingProfile.readingDirection) {
+            case 0:
+                console.log("Returning Paged Comic");
+                return daisuke_1.ReadingMode.PAGED_COMIC;
+            case 1:
+                console.log("Returning Paged Manga");
+                return daisuke_1.ReadingMode.PAGED_MANGA;
+        }
+    }
+    switch (readingProfile.readerMode) {
+        case 1:
+            return daisuke_1.ReadingMode.PAGED_VERTICAL;
+        case 2:
+            return daisuke_1.ReadingMode.WEBTOON;
+    }
+    return undefined;
+};
+const getSectionTitle = (id) => {
+    switch (id) {
+        case "on-deck":
+            return "Keep Reading";
+        case "recently-updated":
+            return "Recently Updated Series";
+        case "newly-added":
+            return "Recently Added Series";
+        default:
+            return "Unknown Section";
+    }
+};
+exports.getSectionTitle = getSectionTitle;
+const convertLanguage = (lang) => {
+    switch (lang) {
+        case "en":
+            return daisuke_1.DefinedLanguages.ENGLISH;
+        case "jp":
+            return daisuke_1.DefinedLanguages.JAPANESE;
+        case "zh":
+            return daisuke_1.DefinedLanguages.CHINESE;
+        case "ko":
+            return daisuke_1.DefinedLanguages.KOREAN;
+        case "fr":
+            return daisuke_1.DefinedLanguages.FRENCH;
+        case "es":
+            return daisuke_1.DefinedLanguages.SPANISH;
+        case "pt":
+            return daisuke_1.DefinedLanguages.PORTUGUESE;
+        default:
+            return daisuke_1.DefinedLanguages.UNIVERSAL;
+    }
+};
+
+},{"../api":2,"./constants":13,"@suwatte/daisuke":16}],15:[function(require,module,exports){
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+__exportStar(require("./constants"), exports);
+__exportStar(require("./helpers"), exports);
+
+},{"./constants":13,"./helpers":14}],16:[function(require,module,exports){
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+__exportStar(require("./runners"), exports);
+__exportStar(require("./types"), exports);
+
+},{"./runners":40,"./types":70}],17:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+
+},{}],18:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],19:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],20:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],21:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],22:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],23:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],24:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],25:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],26:[function(require,module,exports){
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+__exportStar(require("./ContentEvent"), exports);
+__exportStar(require("./ChapterEvent"), exports);
+__exportStar(require("./ProgressSync"), exports);
+__exportStar(require("./LibrarySync"), exports);
+__exportStar(require("./StreamContextProvider"), exports);
+__exportStar(require("./ContextMenuHandler"), exports);
+__exportStar(require("./GroupedUpdateProvider"), exports);
+__exportStar(require("./ImageRedrawHandler"), exports);
+
+},{"./ChapterEvent":18,"./ContentEvent":19,"./ContextMenuHandler":20,"./GroupedUpdateProvider":21,"./ImageRedrawHandler":22,"./LibrarySync":23,"./ProgressSync":24,"./StreamContextProvider":25}],27:[function(require,module,exports){
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+__exportStar(require("./handlers"), exports);
+__exportStar(require("./ContentSource"), exports);
+
+},{"./ContentSource":17,"./handlers":26}],28:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],29:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],30:[function(require,module,exports){
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+__exportStar(require("./ContentTracker"), exports);
+__exportStar(require("./AdvancedTracker"), exports);
+
+},{"./AdvancedTracker":28,"./ContentTracker":29}],31:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.BasicAuthenticationUIIdentifier = void 0;
+var BasicAuthenticationUIIdentifier;
+(function (BasicAuthenticationUIIdentifier) {
+    BasicAuthenticationUIIdentifier[BasicAuthenticationUIIdentifier["EMAIL"] = 0] = "EMAIL";
+    BasicAuthenticationUIIdentifier[BasicAuthenticationUIIdentifier["USERNAME"] = 1] = "USERNAME";
+})(BasicAuthenticationUIIdentifier || (exports.BasicAuthenticationUIIdentifier = BasicAuthenticationUIIdentifier = {}));
+
+},{}],32:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],33:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],34:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],35:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],36:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],37:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],38:[function(require,module,exports){
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+__exportStar(require("./Authentication"), exports);
+__exportStar(require("./Preferences"), exports);
+__exportStar(require("./ImageRequest"), exports);
+__exportStar(require("./DirectoryHandler"), exports);
+__exportStar(require("./PageProvider"), exports);
+__exportStar(require("./Setup"), exports);
+__exportStar(require("./PageResolver"), exports);
+
+},{"./Authentication":31,"./DirectoryHandler":32,"./ImageRequest":33,"./PageProvider":34,"./PageResolver":35,"./Preferences":36,"./Setup":37}],39:[function(require,module,exports){
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.RunnerEnvironment = void 0;
+__exportStar(require("./extensions"), exports);
+var RunnerEnvironment;
+(function (RunnerEnvironment) {
+    RunnerEnvironment[RunnerEnvironment["SOURCE"] = 0] = "SOURCE";
+    RunnerEnvironment[RunnerEnvironment["TRACKER"] = 1] = "TRACKER";
+})(RunnerEnvironment || (exports.RunnerEnvironment = RunnerEnvironment = {}));
+
+},{"./extensions":38}],40:[function(require,module,exports){
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+__exportStar(require("./ContentSource"), exports);
+__exportStar(require("./Runner"), exports);
+__exportStar(require("./ContentTracker"), exports);
+
+},{"./ContentSource":27,"./ContentTracker":30,"./Runner":39}],41:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],42:[function(require,module,exports){
+"use strict";
+// Picker
+Object.defineProperty(exports, "__esModule", { value: true });
+
+},{}],43:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.UIStepper = exports.UIButton = exports.UIDatePicker = exports.UITextField = exports.UIToggle = exports.UIMultiPicker = exports.UIPicker = void 0;
+const UIElements_1 = require("./UIElements");
+const UIPicker = (props) => (Object.assign(Object.assign({}, props), { type: UIElements_1.UIComponentType.SELECT }));
+exports.UIPicker = UIPicker;
+const UIMultiPicker = (props) => (Object.assign(Object.assign({}, props), { type: UIElements_1.UIComponentType.MULTISELECT }));
+exports.UIMultiPicker = UIMultiPicker;
+const UIToggle = (props) => (Object.assign(Object.assign({}, props), { type: UIElements_1.UIComponentType.TOGGLE }));
+exports.UIToggle = UIToggle;
+const UITextField = (props) => (Object.assign(Object.assign({}, props), { type: UIElements_1.UIComponentType.TEXTFIELD }));
+exports.UITextField = UITextField;
+const UIDatePicker = (props) => (Object.assign(Object.assign({}, props), { type: UIElements_1.UIComponentType.DATEPICKER }));
+exports.UIDatePicker = UIDatePicker;
+const UIButton = (props) => (Object.assign(Object.assign({}, props), { type: UIElements_1.UIComponentType.BUTTON }));
+exports.UIButton = UIButton;
+const UIStepper = (props) => (Object.assign(Object.assign({}, props), { type: UIElements_1.UIComponentType.STEPPER }));
+exports.UIStepper = UIStepper;
+
+},{"./UIElements":44}],44:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.UIComponentType = void 0;
+var UIComponentType;
+(function (UIComponentType) {
+    UIComponentType[UIComponentType["SELECT"] = 0] = "SELECT";
+    UIComponentType[UIComponentType["MULTISELECT"] = 1] = "MULTISELECT";
+    UIComponentType[UIComponentType["STEPPER"] = 2] = "STEPPER";
+    UIComponentType[UIComponentType["TOGGLE"] = 3] = "TOGGLE";
+    UIComponentType[UIComponentType["TEXTFIELD"] = 4] = "TEXTFIELD";
+    UIComponentType[UIComponentType["BUTTON"] = 5] = "BUTTON";
+    UIComponentType[UIComponentType["DATEPICKER"] = 6] = "DATEPICKER";
+})(UIComponentType || (exports.UIComponentType = UIComponentType = {}));
+
+},{}],45:[function(require,module,exports){
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+__exportStar(require("./Form"), exports);
+__exportStar(require("./UIElements"), exports);
+__exportStar(require("./UIDefinitions"), exports);
+__exportStar(require("./UIElementBuilders"), exports);
+
+},{"./Form":41,"./UIDefinitions":42,"./UIElementBuilders":43,"./UIElements":44}],46:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],47:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DefinedLanguages = void 0;
+var DefinedLanguages;
+(function (DefinedLanguages) {
+    DefinedLanguages["UNIVERSAL"] = "UNIVERSAL";
+    DefinedLanguages["ENGLISH"] = "en_US";
+    DefinedLanguages["KOREAN"] = "ko_KR";
+    DefinedLanguages["JAPANESE"] = "ja_JP";
+    DefinedLanguages["FRENCH"] = "fr_FR";
+    DefinedLanguages["CHINESE"] = "zh-CN";
+    DefinedLanguages["SPANISH"] = "es_ES";
+    DefinedLanguages["PORTUGUESE"] = "pt_BR";
+})(DefinedLanguages || (exports.DefinedLanguages = DefinedLanguages = {}));
+
+},{}],48:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],49:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],50:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],51:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],52:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],53:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],54:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ContentType = exports.ReadingFlag = exports.ReadingMode = exports.PublicationStatus = void 0;
+// Enums
+var PublicationStatus;
+(function (PublicationStatus) {
+    PublicationStatus[PublicationStatus["ONGOING"] = 1] = "ONGOING";
+    PublicationStatus[PublicationStatus["COMPLETED"] = 2] = "COMPLETED";
+    PublicationStatus[PublicationStatus["CANCELLED"] = 3] = "CANCELLED";
+    PublicationStatus[PublicationStatus["HIATUS"] = 4] = "HIATUS";
+})(PublicationStatus || (exports.PublicationStatus = PublicationStatus = {}));
+/**
+ * The method in which the content can be read
+ */
+var ReadingMode;
+(function (ReadingMode) {
+    ReadingMode[ReadingMode["PAGED_MANGA"] = 0] = "PAGED_MANGA";
+    ReadingMode[ReadingMode["PAGED_COMIC"] = 1] = "PAGED_COMIC";
+    ReadingMode[ReadingMode["PAGED_VERTICAL"] = 2] = "PAGED_VERTICAL";
+    ReadingMode[ReadingMode["WEBTOON"] = 3] = "WEBTOON";
+})(ReadingMode || (exports.ReadingMode = ReadingMode = {}));
+var ReadingFlag;
+(function (ReadingFlag) {
+    ReadingFlag[ReadingFlag["READING"] = 0] = "READING";
+    ReadingFlag[ReadingFlag["PLANNED"] = 1] = "PLANNED";
+    ReadingFlag[ReadingFlag["COMPLETED"] = 2] = "COMPLETED";
+    ReadingFlag[ReadingFlag["DROPPED"] = 3] = "DROPPED";
+    ReadingFlag[ReadingFlag["REREADING"] = 4] = "REREADING";
+    ReadingFlag[ReadingFlag["PAUSED"] = 5] = "PAUSED";
+    ReadingFlag[ReadingFlag["UNKNOWN"] = 6] = "UNKNOWN";
+})(ReadingFlag || (exports.ReadingFlag = ReadingFlag = {}));
+var ContentType;
+(function (ContentType) {
+    ContentType[ContentType["MANGA"] = 0] = "MANGA";
+    ContentType[ContentType["MANHUA"] = 1] = "MANHUA";
+    ContentType[ContentType["MANHWA"] = 2] = "MANHWA";
+    ContentType[ContentType["COMIC"] = 3] = "COMIC";
+    ContentType[ContentType["NOVEL"] = 4] = "NOVEL";
+})(ContentType || (exports.ContentType = ContentType = {}));
+
+},{}],55:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],56:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],57:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],58:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ProviderLinkType = void 0;
+var ProviderLinkType;
+(function (ProviderLinkType) {
+    ProviderLinkType[ProviderLinkType["WEBSITE"] = 0] = "WEBSITE";
+    ProviderLinkType[ProviderLinkType["TWITTER"] = 1] = "TWITTER";
+    ProviderLinkType[ProviderLinkType["DISCORD"] = 2] = "DISCORD";
+    ProviderLinkType[ProviderLinkType["PATREON"] = 3] = "PATREON";
+})(ProviderLinkType || (exports.ProviderLinkType = ProviderLinkType = {}));
+
+},{}],59:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],60:[function(require,module,exports){
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+__exportStar(require("./Content"), exports);
+__exportStar(require("./Highlight"), exports);
+__exportStar(require("./Chapter"), exports);
+__exportStar(require("./ChapterData"), exports);
+__exportStar(require("./Property"), exports);
+__exportStar(require("./Collection"), exports);
+__exportStar(require("./Provider"), exports);
+__exportStar(require("./Enums"), exports);
+__exportStar(require("./ReaderContext"), exports);
+__exportStar(require("./ContextMenu"), exports);
+__exportStar(require("./DeepLinkContext"), exports);
+__exportStar(require("./BooleanState"), exports);
+__exportStar(require("./ContentProgressState"), exports);
+__exportStar(require("./GroupedUpdatesResponse"), exports);
+
+},{"./BooleanState":46,"./Chapter":47,"./ChapterData":48,"./Collection":49,"./Content":50,"./ContentProgressState":51,"./ContextMenu":52,"./DeepLinkContext":53,"./Enums":54,"./GroupedUpdatesResponse":55,"./Highlight":56,"./Property":57,"./Provider":58,"./ReaderContext":59}],61:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.AuthMethod = void 0;
+var AuthMethod;
+(function (AuthMethod) {
+    AuthMethod[AuthMethod["USERNAME_PW"] = 0] = "USERNAME_PW";
+    AuthMethod[AuthMethod["EMAIL_PW"] = 1] = "EMAIL_PW";
+    AuthMethod[AuthMethod["WEB"] = 2] = "WEB";
+    AuthMethod[AuthMethod["OAUTH"] = 3] = "OAUTH";
+})(AuthMethod || (exports.AuthMethod = AuthMethod = {}));
+
+},{}],62:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],63:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],64:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.CatalogRating = void 0;
+var CatalogRating;
+(function (CatalogRating) {
+    /**
+     * Catalog does not contain ANY SUGGESTIVE OR NSFW content
+     */
+    CatalogRating[CatalogRating["SAFE"] = 0] = "SAFE";
+    /**
+     * Catalog may contain SUGGESTIVE OR NSFW content,
+     * runners must hide NSFW content by default,
+     * users will be required to verify they are of age to view NSFW content
+     */
+    CatalogRating[CatalogRating["MIXED"] = 1] = "MIXED";
+    /**
+     * Catalog contains MAINLY SUGGESTIVE OR NSFW content,
+     * users will be required to verify they are of age to view NSFW content
+     */
+    CatalogRating[CatalogRating["NSFW"] = 2] = "NSFW";
+})(CatalogRating || (exports.CatalogRating = CatalogRating = {}));
+
+},{}],65:[function(require,module,exports){
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+__exportStar(require("./Authentication"), exports);
+__exportStar(require("./RunnerInfo"), exports);
+__exportStar(require("./PagedResult"), exports);
+__exportStar(require("./ContextProvider"), exports);
+
+},{"./Authentication":61,"./ContextProvider":62,"./PagedResult":63,"./RunnerInfo":64}],66:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],67:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.FilterType = void 0;
+var FilterType;
+(function (FilterType) {
+    /**
+     * This Represents the filter as a toggle switch, the value returned in the directory request will be a `boolean`
+     */
+    FilterType[FilterType["TOGGLE"] = 0] = "TOGGLE";
+    /**
+     * This represents the filter as a picker, the value returned will be the `key` of the selected option as a `string`
+     */
+    FilterType[FilterType["SELECT"] = 1] = "SELECT";
+    /**
+     * This Represents the filter as a multi-picker, the value returned will the the keys of the selected options as an array of strings
+     */
+    FilterType[FilterType["MULTISELECT"] = 2] = "MULTISELECT";
+    /**
+     * This Represents the filter as a multi-picker,the value returned will be of type {@link ExcludableMultiSelectProp}
+     */
+    FilterType[FilterType["EXCLUDABLE_MULTISELECT"] = 3] = "EXCLUDABLE_MULTISELECT";
+    /**
+     * This will represent the filter as a textfield, the value returned will be a string
+     */
+    FilterType[FilterType["TEXT"] = 4] = "TEXT";
+    /**
+     * This is a basic filter that will only display the title or subtitle, it will not return any value in the populated `DirectoryRequest`
+     */
+    FilterType[FilterType["INFO"] = 5] = "INFO";
+})(FilterType || (exports.FilterType = FilterType = {}));
+
+},{}],68:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],69:[function(require,module,exports){
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+__exportStar(require("./DirectoryConfig"), exports);
+__exportStar(require("./DirectoryRequest"), exports);
+__exportStar(require("./DirectoryFilter"), exports);
+
+},{"./DirectoryConfig":66,"./DirectoryFilter":67,"./DirectoryRequest":68}],70:[function(require,module,exports){
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Generate = void 0;
+__exportStar(require("./core"), exports);
+__exportStar(require("./content"), exports);
+__exportStar(require("./networking"), exports);
+__exportStar(require("./UI"), exports);
+__exportStar(require("./tracker"), exports);
+__exportStar(require("./directory"), exports);
+__exportStar(require("./page"), exports);
+const Generate = (v) => v;
+exports.Generate = Generate;
+
+},{"./UI":45,"./content":60,"./core":65,"./directory":69,"./networking":77,"./page":78,"./tracker":79}],71:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.NetworkClientBuilder = void 0;
+/**
+ * NetworkClientBuilder is a builder class used for creating and configuring instances of NetworkClient.
+ * The builder allows you to configure various aspects of the NetworkClient, such as rate limits,
+ * request/response transformers (interceptors), headers, cookies, timeout, status validator, and more.
+ */
+class NetworkClientBuilder {
+    constructor() {
+        // Array of functions that transform requests
+        this.requestTransformers = [];
+        // Array of functions that transform responses
+        this.responseTransformers = [];
+        // Object representing HTTP headers, where each key-value pair represents a header
+        this.headers = {};
+        // Array of cookies
+        this.cookies = [];
+    }
+    /**
+     * Sets the rate limit for the NetworkClient.
+     *
+     * @param requests - The maximum number of requests to make per interval.
+     * @param interval - The length of the rate limiting interval in seconds.
+     * @returns The builder, to allow for method chaining.
+     */
+    setRateLimit(requests, interval) {
+        this.requestsPerSecond = requests / interval;
+        return this;
+    }
+    /**
+     * Adds a request interceptor to the NetworkClient.
+     *
+     * @param transformer - The interceptor to add. This should be a function that takes a request and modifies it in some way.
+     * @returns The builder, to allow for method chaining.
+     */
+    addRequestInterceptor(transformer) {
+        this.requestTransformers.push(transformer);
+        return this;
+    }
+    /**
+     * Adds a response interceptor to the NetworkClient.
+     *
+     * @param transformer - The interceptor to add. This should be a function that takes a response and modifies it in some way.
+     * @returns The builder, to allow for method chaining.
+     */
+    addResponseInterceptor(transformer) {
+        this.responseTransformers.push(transformer);
+        return this;
+    }
+    /**
+     * Sets the authorization token for the NetworkClient.
+     *
+     * @param token - The token to be included in the Authorization header of every request.
+     * @returns The builder, to allow for method chaining.
+     */
+    setAuthorizationToken(token) {
+        return this.addHeader("Authorization", token);
+    }
+    /**
+     * Sets the status validator for the NetworkClient.
+     *
+     * @param validator - A function that takes a status code and returns true if it is considered successful.
+     * @returns The builder, to allow for method chaining.
+     */
+    setStatusValidator(validator) {
+        this.statusValidator = validator;
+        return this;
+    }
+    /**
+     * Sets the timeout for requests made by the NetworkClient.
+     *
+     * @param timeout - The maximum time to wait for a request to complete, in milliseconds.
+     * @returns The builder, to allow for method chaining.
+     */
+    setTimeout(timeout) {
+        this.timeout = timeout;
+        return this;
+    }
+    /**
+     * Sets the maximum number of retries for this request by the NetworkClient.
+     *
+     * @param retries - The maximum number of retries for this request
+     * @returns The builder, to allow for method chaining.
+     */
+    setMaxRetries(retries) {
+        this.maxRetries = retries;
+        return this;
+    }
+    /**
+     * Sets a header for the NetworkClient.
+     *
+     * @param key - The name of the header
+     * @param value - The value of the header
+     * @returns The builder, to allow for method chaining.
+     */
+    addHeader(key, value) {
+        this.headers[key] = value;
+        return this;
+    }
+    /**
+     * Sets a cookie for the NetworkClient.
+     *
+     * @param cookie - The cookie to be included in every request.
+     * @returns The builder, to allow for method chaining.
+     */
+    addCookie(cookie) {
+        this.cookies.push(cookie);
+        return this;
+    }
+    /**
+     * Builds a NetworkClient using the parameters set on the builder.
+     *
+     * @returns A NetworkClient with the configured parameters.
+     */
+    build() {
+        return new NetworkClient(this);
+    }
+}
+exports.NetworkClientBuilder = NetworkClientBuilder;
+
+},{}],72:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],73:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],74:[function(require,module,exports){
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.name = void 0;
+const name = (base, known) => __awaiter(void 0, void 0, void 0, function* () {
+    return Object.assign(Object.assign({}, base), known);
+});
+exports.name = name;
+
+},{}],75:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],76:[function(require,module,exports){
+arguments[4][17][0].apply(exports,arguments)
+},{"dup":17}],77:[function(require,module,exports){
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+__exportStar(require("./Builder"), exports);
+__exportStar(require("./Client"), exports);
+__exportStar(require("./Request"), exports);
+__exportStar(require("./Response"), exports);
+__exportStar(require("./Transformer"), exports);
+__exportStar(require("./Error"), exports);
+
+},{"./Builder":71,"./Client":72,"./Error":73,"./Request":74,"./Response":75,"./Transformer":76}],78:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SectionStyle = void 0;
+var SectionStyle;
+(function (SectionStyle) {
+    SectionStyle[SectionStyle["DEFAULT"] = 0] = "DEFAULT";
+    SectionStyle[SectionStyle["INFO"] = 1] = "INFO";
+    SectionStyle[SectionStyle["GALLERY"] = 2] = "GALLERY";
+    SectionStyle[SectionStyle["NAVIGATION_LIST"] = 3] = "NAVIGATION_LIST";
+    SectionStyle[SectionStyle["ITEM_LIST"] = 4] = "ITEM_LIST";
+    SectionStyle[SectionStyle["PADDED_LIST"] = 5] = "PADDED_LIST";
+    SectionStyle[SectionStyle["TAG"] = 6] = "TAG";
+    SectionStyle[SectionStyle["STANDARD_GRID"] = 7] = "STANDARD_GRID";
+})(SectionStyle || (exports.SectionStyle = SectionStyle = {}));
+
+},{}],79:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TrackStatus = void 0;
+var TrackStatus;
+(function (TrackStatus) {
+    TrackStatus["READING"] = "READING";
+    TrackStatus["PLANNING"] = "PLANNING";
+    TrackStatus["COMPLETED"] = "COMPLETED";
+    TrackStatus["PAUSED"] = "PAUSED";
+    TrackStatus["DROPPED"] = "DROPPED";
+    TrackStatus["REREADING"] = "REREADING";
+})(TrackStatus || (exports.TrackStatus = TrackStatus = {}));
+
+},{}]},{},[11])(11)
+});
