@@ -47,7 +47,7 @@ const healthCheck = async () => {
 };
 exports.healthCheck = healthCheck;
 
-},{".":2,"../store":12,"../utils":15}],2:[function(require,module,exports){
+},{".":2,"../store":16,"../utils":20}],2:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -68,12 +68,13 @@ __exportStar(require("./auth"), exports);
 __exportStar(require("./request"), exports);
 __exportStar(require("./library"), exports);
 
-},{"./auth":1,"./library":3,"./request":4}],3:[function(require,module,exports){
+},{"./auth":1,"./library":3,"./request":5}],3:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getRecommendationGenre = exports.getRecentlyAddedSeries = exports.getRecentlyUpdatedSeries = exports.getOnDeckSeries = exports.getDashboardInfo = exports.getSeriesMetadata = exports.getSeriesReadingProfile = exports.getSeries = exports.getSeriesChapters = exports.getLibrarySeries = exports.getLibraries = void 0;
+exports.getSeriesContinuePoint = exports.getRecommendationGenre = exports.getRecentlyAddedSeries = exports.getRecentlyUpdatedSeries = exports.getOnDeckSeries = exports.getDashboardInfo = exports.getSideNavInfo = exports.getSeriesMetadata = exports.getSeriesReadingProfile = exports.getSeries = exports.getSeriesChapters = exports.getLibrarySeries = exports.getLibraries = void 0;
 const _1 = require(".");
 const utils_1 = require("../utils");
+const cache_1 = require("../utils/cache");
 /**
  * Returns all libraries.
  */
@@ -86,160 +87,100 @@ exports.getLibraries = getLibraries;
 /**
  * Gets All Books within a library
  */
-const getLibrarySeries = async (libraryId, 
-// sort: string,
-// filters: FilterV2Dto,
-page = 1
-// search?: string
-) => {
+const getLibrarySeries = async (libraryId, dirRequest) => {
+    const { sort, filters, page = 1, query, tag } = dirRequest;
+    const filtersStatements = (0, utils_1.buildFilterStatements)(filters);
     const librarySeries = await (0, _1.request)({
         url: await (0, utils_1.genURL)("/api/Series/v2"),
         method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
         body: {
-            statements: libraryId
-                ? [{ field: 19, value: libraryId.toString(), comparison: 0 }]
-                : [],
+            statements: tag?.propertyId
+                ? [(0, utils_1.buildTagFilterStatement)(tag?.tagId, tag?.propertyId)]
+                : [
+                    ...(libraryId
+                        ? [
+                            {
+                                field: 19,
+                                value: libraryId.toString(),
+                                comparison: 0,
+                            },
+                        ]
+                        : []),
+                    ...(query
+                        ? [{ field: 1, value: query, comparison: 7 }]
+                        : []),
+                    ...filtersStatements,
+                ],
             combination: 1,
-            sortOptions: { isAscending: true, sortField: 1 },
+            sortOptions: sort ? (0, utils_1.buildSort)(sort) : { isAscending: true, sortField: 1 },
         },
         params: {
-            PageNumber: page - 1,
-            PageSize: utils_1.RESULT_COUNT,
+            pageNumber: page,
+            pageSize: utils_1.RESULT_COUNT,
         },
     });
     return librarySeries;
 };
 exports.getLibrarySeries = getLibrarySeries;
-/**
- * Get Books on deck
- */
-// export const getBooksOnDeck = async (libraryId: string | null) => {
-//   const { content: data } = await request<PageBookDto>({
-//     url: await genURL("/api/Series/on-deck"),
-//     params: {
-//       ...(libraryId && { libraryId }),
-//     },
-//   })
-//   const host = await getHost()
-//   const highlights: Highlight[] = (data ?? []).map((book) =>
-//     seriesToHighlight(book, host)
-//   )
-//   return highlights
-// }
-/**
- * Gets all series within a library
- */
-// export const getSeriesForLibraryWithState = async (
-//   library_id: string | null,
-//   state: string
-// ) => {
-//   const body = {
-//     url: await genURL(`/api/v1/series/${state}`),
-//     params: {
-//       ...(library_id && { library_id }),
-//     },
-//   }
-//   const { content: data } = await request<PageSeriesDto>(body)
-//   return data ?? []
-// }
-// export const getSeriesForLibrary = async (
-//   library_id: string | null,
-//   sort: string,
-//   filters: FilterItems,
-//   page: number,
-//   search?: string
-// ) => {
-//   const config = {
-//     url: await genURL(`/api/v1/series`),
-//     params: {
-//       ...(library_id && { library_id }),
-//       sort,
-//       ...filters,
-//       page: page - 1,
-//       size: RESULT_COUNT,
-//       search,
-//     },
-//   }
-//   const { content: data } = await request<PageSeriesDto>(config)
-//   return data ?? []
-// }
-/**
- * Get books within a series
- */
-// export const getBooksForSeries = async (
-//   series: string,
-//   sort: string,
-//   filters: FilterItems,
-//   page: number
-// ) => {
-//   const { content: data, last } = await request<PageBookDto>({
-//     url: await genURL(`/api/v1/series/${series}/books`),
-//     params: {
-//       page: page - 1,
-//       size: RESULT_COUNT,
-//       sort,
-//       ...filters,
-//     },
-//   })
-//   const host = await getHost()
-//   const items: Highlight[] = (data ?? []).map((book) =>
-//     seriesToHighlight(book, host)
-//   )
-//   return {
-//     isLastPage: last ?? true,
-//     items,
-//   }
-// }
-const getSeriesChapters = async (series) => {
-    const seriesDetail = await (0, _1.request)({
-        url: await (0, utils_1.genURL)(`/api/Series/series-detail`),
+const getSeriesChapters = async (series, skipCache = false) => {
+    const allVolumes = await (0, _1.cachedRequest)({
+        url: await (0, utils_1.genURL)(`/api/Series/volumes`),
         params: {
             seriesId: series,
         },
+    }, {
+        cacheKey: (0, cache_1.generateCacheKey)("series_chapters", series),
+        ttl: cache_1.CACHE_TTL.SERIES_DETAILS,
+        skipCache,
     });
-    const chapters = [
-        ...(seriesDetail.chapters ?? []),
-        ...(seriesDetail.specials ?? []),
-    ].reverse();
-    return { chapters, volumes: seriesDetail.volumes };
+    const volumes = allVolumes.filter((v) => v.minNumber !== -100000 &&
+        v.minNumber !== 100000 &&
+        v.chapters &&
+        v.chapters.length > 0);
+    const chaptersVolume = allVolumes.find((v) => v.minNumber <= -100000);
+    const specialsVolume = allVolumes.find((v) => v.minNumber >= 100000);
+    return { chaptersVolume, volumes, specialsVolume, allVolumes };
 };
 exports.getSeriesChapters = getSeriesChapters;
 const getSeries = async (id) => {
-    return (0, _1.request)({
+    return (0, _1.cachedRequest)({
         url: await (0, utils_1.genURL)(`/api/Series/${id}`),
+    }, {
+        cacheKey: (0, cache_1.generateCacheKey)("series", id),
+        ttl: cache_1.CACHE_TTL.SERIES_DETAILS,
     });
 };
 exports.getSeries = getSeries;
 const getSeriesReadingProfile = async (id) => {
-    return (0, _1.request)({
+    return (0, _1.cachedRequest)({
         url: await (0, utils_1.genURL)(`/api/reading-profile/${id}`),
+    }, {
+        cacheKey: (0, cache_1.generateCacheKey)("reading_profile", id),
+        ttl: cache_1.CACHE_TTL.READING_PROFILE,
     });
 };
 exports.getSeriesReadingProfile = getSeriesReadingProfile;
 const getSeriesMetadata = async (id) => {
-    return (0, _1.request)({
+    return (0, _1.cachedRequest)({
         url: await (0, utils_1.genURL)(`/api/Series/metadata`),
         params: {
             seriesId: id,
         },
+    }, {
+        cacheKey: (0, cache_1.generateCacheKey)("series_metadata", id),
+        ttl: cache_1.CACHE_TTL.SERIES_METADATA,
     });
 };
 exports.getSeriesMetadata = getSeriesMetadata;
-// export const getBooks = async (
-//   series: string,
-//   size: number,
-//   sort: string = buildSort(Sort.Number, false)
-// ) => {
-//   const { content: data } = await request<PageBookDto>({
-//     url: await genURL(`/api/v1/series/${series}/books`),
-//     params: {
-//       page: 0,
-//       size,
-//       sort,
-//     },
-//   })
-//   return data ?? []
-// }
+const getSideNavInfo = async () => {
+    return (0, _1.request)({
+        url: await (0, utils_1.genURL)("/api/Stream/sidenav"),
+    });
+};
+exports.getSideNavInfo = getSideNavInfo;
 const getDashboardInfo = async () => {
     return (0, _1.request)({
         url: await (0, utils_1.genURL)("/api/stream/dashboard"),
@@ -256,12 +197,14 @@ const getOnDeckSeries = async (libraryId) => {
     });
 };
 exports.getOnDeckSeries = getOnDeckSeries;
-const getRecentlyUpdatedSeries = async (libraryId) => {
+const getRecentlyUpdatedSeries = async () => {
     const items = await (0, _1.request)({
         url: await (0, utils_1.genURL)("/api/series/recently-updated-series"),
         method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
         params: {
-            ...(libraryId && { libraryId }),
             pageSize: utils_1.RESULT_COUNT,
             pageNumber: 0,
         },
@@ -270,7 +213,7 @@ const getRecentlyUpdatedSeries = async (libraryId) => {
     return series;
 };
 exports.getRecentlyUpdatedSeries = getRecentlyUpdatedSeries;
-const getRecentlyAddedSeries = async (libraryId) => {
+const getRecentlyAddedSeries = async () => {
     return (0, _1.request)({
         url: await (0, utils_1.genURL)("/api/series/recently-added-v2"),
         method: "POST",
@@ -279,7 +222,6 @@ const getRecentlyAddedSeries = async (libraryId) => {
         },
         body: {},
         params: {
-            ...(libraryId && { libraryId }),
             pageSize: utils_1.RESULT_COUNT,
             pageNumber: 0,
         },
@@ -288,17 +230,80 @@ const getRecentlyAddedSeries = async (libraryId) => {
 exports.getRecentlyAddedSeries = getRecentlyAddedSeries;
 const getRecommendationGenre = async (genre) => {
     return (0, _1.request)({
-        url: await (0, utils_1.genURL)(`/api/recommended/more-in`),
+        url: await (0, utils_1.genURL)(`/api/Recommended/more-in`),
     });
 };
 exports.getRecommendationGenre = getRecommendationGenre;
+const getSeriesContinuePoint = async (seriesId) => {
+    const hasProgress = await (0, _1.request)({
+        url: await (0, utils_1.genURL)(`/api/Reader/has-progress`),
+        params: {
+            seriesId: seriesId,
+        },
+    });
+    if (!hasProgress) {
+        return null;
+    }
+    return (0, _1.request)({
+        url: await (0, utils_1.genURL)(`/api/Reader/continue-point`),
+        params: {
+            seriesId: seriesId,
+        },
+    });
+};
+exports.getSeriesContinuePoint = getSeriesContinuePoint;
 
-},{".":2,"../utils":15}],4:[function(require,module,exports){
+},{".":2,"../utils":20,"../utils/cache":17}],4:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getLanguages = exports.getTags = exports.getPeoples = exports.getGenres = void 0;
+const _1 = require(".");
+const utils_1 = require("../utils");
+const getGenres = async (libraryIds) => {
+    return await (0, _1.request)({
+        url: await (0, utils_1.genURL)("/api/Metadata/genres"),
+        params: {
+            ...(libraryIds && { libraryIds: libraryIds.join(',') }),
+        },
+    });
+};
+exports.getGenres = getGenres;
+const getPeoples = async (libraryIds) => {
+    return await (0, _1.request)({
+        url: await (0, utils_1.genURL)("/api/Metadata/people"),
+        params: {
+            ...(libraryIds && { libraryIds: libraryIds.join(',') }),
+        },
+    });
+};
+exports.getPeoples = getPeoples;
+const getTags = async (libraryIds) => {
+    return await (0, _1.request)({
+        url: await (0, utils_1.genURL)("/api/Metadata/tags"),
+        params: {
+            ...(libraryIds && { libraryIds: libraryIds.join(',') }),
+        },
+    });
+};
+exports.getTags = getTags;
+const getLanguages = async (libraryIds) => {
+    return await (0, _1.request)({
+        url: await (0, utils_1.genURL)("/api/Metadata/languages"),
+        params: {
+            ...(libraryIds && { libraryIds }),
+        },
+    });
+};
+exports.getLanguages = getLanguages;
+
+},{".":2,"../utils":20}],5:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.request = request;
 exports.simpleReq = simpleReq;
+exports.cachedRequest = cachedRequest;
 const auth_1 = require("./auth");
+const cache_1 = require("../utils/cache");
 async function request(req) {
     const host = await (0, auth_1.getHost)();
     const jwt = await (0, auth_1.getJwt)();
@@ -307,6 +312,7 @@ async function request(req) {
     if (!jwt)
         throw new Error("You are not signed in!");
     const client = new NetworkClient();
+    console.log("Request to:", req.url, req.body, req.params);
     const { data } = await client.request({
         ...req,
         headers: {
@@ -338,8 +344,38 @@ async function simpleReq(req) {
         return data;
     }
 }
+/**
+ * Cached request wrapper
+ * Makes a network request with optional caching support
+ * @param req The network request configuration
+ * @param options Cache options
+ * @param options.cacheKey Optional key to use for caching the response
+ * @param options.ttl Time to live in milliseconds (required if cacheKey is provided)
+ * @param options.skipCache If true, bypasses cache and always makes a fresh request
+ * @returns The response data of type T
+ */
+async function cachedRequest(req, options) {
+    const { cacheKey, ttl, skipCache = false } = options || {};
+    if (skipCache) {
+        if (!cacheKey) {
+            return request(req);
+        }
+        // Check cache first
+        const cachedData = await (0, cache_1.getCachedData)(cacheKey);
+        if (cachedData !== null) {
+            return cachedData;
+        }
+    }
+    // Cache miss or expired, make the request
+    const data = await request(req);
+    // Store in cache if TTL is provided
+    if (cacheKey && ttl !== undefined) {
+        await (0, cache_1.setCachedData)(cacheKey, data, ttl);
+    }
+    return data;
+}
 
-},{"./auth":1}],5:[function(require,module,exports){
+},{"../utils/cache":17,"./auth":1}],6:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.KavitaAuthentication = void 0;
@@ -368,32 +404,9 @@ exports.KavitaAuthentication = {
     handleUserSignOut: async () => {
         throw "Not ready";
     },
-    // handleBasicAuth: async (identifier, password) => {
-    //   const credentials = {
-    //     username: identifier,
-    //     password,
-    //   }
-    //   const client = new NetworkClient()
-    //   const { data: response } = await client.request({
-    //     url: await genURL("/api/Account/login"),
-    //     method: "POST",
-    //     body: {
-    //       ...credentials,
-    //       apiKey: await getApiKey(),
-    //     },
-    //   })
-    //   console.log(response)
-    //   // Try Fetching User to verify
-    //   await client.request({
-    //     url: await genURL("/api/Account"),
-    //   })
-    //   // Set Props
-    //   await ObjectStore.set("authenticated", true)
-    //   await SecureStore.set("credentials", credentials)
-    // },
 };
 
-},{"../api/auth":1,"../store":12}],6:[function(require,module,exports){
+},{"../api/auth":1,"../store":16}],7:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.KavitaChapterEvent = void 0;
@@ -401,15 +414,16 @@ const api_1 = require("../api");
 const utils_1 = require("../utils");
 exports.KavitaChapterEvent = {
     onChaptersMarked: async function (seriesId, chapterIds, completed) {
-        const promises = chapterIds.map((chapterId) => markAsRead(Number(seriesId), Number(chapterId), completed));
-        const state = await Promise.allSettled(promises);
-        const failing = state.filter((v) => v.status === "rejected").length;
-        if (failing) {
-            console.error(`Failed to mark ${failing} Books`);
+        const chapterIdsNum = chapterIds.map((id) => Number(id));
+        try {
+            await markAsRead(Number(seriesId), chapterIdsNum, completed);
+        }
+        catch (error) {
+            console.error(`Failed to mark ${chapterIds?.length ?? 0} chapters`);
         }
     },
     onChapterRead: async function (seriesId, chapterId) {
-        return markAsRead(Number(seriesId), Number(chapterId));
+        return markAsRead(Number(seriesId), [Number(chapterId)], true);
     },
     async onPageRead(seriesId, chapterId, page) {
         return (0, api_1.request)({
@@ -426,41 +440,51 @@ exports.KavitaChapterEvent = {
         });
     },
 };
-const markAsRead = async (seriesId, chapterId, completed = true) => {
-    await (0, api_1.request)({
-        url: await (0, utils_1.genURL)(`/api/Reader/progress`),
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: {
-            seriesId: seriesId,
-            chapterId: chapterId,
-            pageNum: completed ? Infinity : -1,
-        },
-    });
+const markAsRead = async (seriesId, chapterIds, completed = true) => {
+    if (completed) {
+        await (0, api_1.request)({
+            url: await (0, utils_1.genURL)(`/api/Reader/mark-multiple-read`),
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: {
+                seriesId,
+                chapterIds,
+            },
+        });
+    }
+    else {
+        await (0, api_1.request)({
+            url: await (0, utils_1.genURL)(`/api/Reader/mark-multiple-unread`),
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: {
+                seriesId,
+                chapterIds,
+            },
+        });
+    }
 };
 
-},{"../api":2,"../utils":15}],7:[function(require,module,exports){
+},{"../api":2,"../utils":20}],8:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.KavitaContentSource = void 0;
 const api_1 = require("../api");
 const utils_1 = require("../utils");
 exports.KavitaContentSource = {
-    getContent: async function (contentId) {
-        // * NOTE: `contentId` in our case will always refer to Series and not Books.
-        const series = await (0, api_1.getSeries)(contentId);
-        const seriesMetadata = await (0, api_1.getSeriesMetadata)(contentId);
-        const readingProfile = await (0, api_1.getSeriesReadingProfile)(contentId);
-        return (0, utils_1.detailedSeriesToContent)(series, seriesMetadata, readingProfile);
+    getContent: async function (seriesId) {
+        const series = await (0, api_1.getSeries)(seriesId);
+        const seriesMetadata = await (0, api_1.getSeriesMetadata)(seriesId);
+        const readingProfile = await (0, api_1.getSeriesReadingProfile)(seriesId);
+        const seriesChapters = await (0, api_1.getSeriesChapters)(seriesId);
+        return (0, utils_1.detailedSeriesToContent)(series, seriesMetadata, seriesChapters, readingProfile);
     },
-    getChapters: async function (contentId) {
-        const { chapters, volumes } = await (0, api_1.getSeriesChapters)(contentId);
-        const host = await (0, api_1.getHost)();
-        const apiKey = await (0, api_1.getApiKey)();
-        const items = (chapters ?? []).map((chapter, index) => (0, utils_1.KavitaChapterToChapter)(chapter, volumes ?? [], host, apiKey, index));
-        return items;
+    getChapters: async function (seriesId) {
+        return (0, utils_1.getKavitaChapters)(seriesId);
     },
     getChapterData: async function (contentId, chapterId) {
         const host = await (0, api_1.getHost)();
@@ -471,25 +495,21 @@ exports.KavitaContentSource = {
                 chapterId: chapterId,
             },
         });
-        const pages = [];
-        for (let page = 1; page <= (chapter.pages ?? 0); page++) {
-            pages.push({
-                url: `${host}/api/Reader/image?chapterId=${chapterId}&page=${page}&apiKey=${apiKey}`,
-            });
-        }
+        const pages = (0, utils_1.getChapterPages)(chapter, host, apiKey);
         return {
             pages,
         };
     },
 };
 
-},{"../api":2,"../utils":15}],8:[function(require,module,exports){
+},{"../api":2,"../utils":20}],9:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.KavitaDirectoryHandler = void 0;
+const daisuke_1 = require("@suwatte/daisuke");
 const utils_1 = require("../utils");
 const api_1 = require("../api");
-const store_1 = require("../store");
+const metadata_1 = require("../api/metadata");
 /**
  * Implementation of the DirectoryHandler Methods
  */
@@ -497,105 +517,174 @@ exports.KavitaDirectoryHandler = {
     getDirectory: function (request) {
         return fetchDirectory(request);
     },
-    getDirectoryConfig: async function (_) {
-        return buildDirectoryConfig();
+    getDirectoryConfig: async function (configId) {
+        const filterOptions = await fetchFilterOptions(configId);
+        return {
+            searchable: true,
+            filters: filterOptions,
+            sort: {
+                options: utils_1.SortOptions,
+                canChangeOrder: true,
+                default: {
+                    id: utils_1.Sort.SortName.toString(),
+                    ascending: true,
+                },
+            },
+        };
     },
 };
-/**
- * Builds the Directory View Sort Options & Filters
- */
-function buildDirectoryConfig() {
-    return {
-        searchable: true,
-        filters: utils_1.FilterOptions,
-        sort: {
-            options: utils_1.SortOptions,
-            canChangeOrder: true,
-        },
-    };
-}
 async function fetchDirectory(request) {
-    const filters = request.filters ?? {};
-    const seriesId = request.context?.seriesId;
     const libraryId = request.context?.libraryId;
     const host = await (0, api_1.getHost)();
     const apiKey = await (0, api_1.getApiKey)();
     if (!host) {
         throw new Error("Host not defined");
     }
-    const asTitle = await store_1.KavitaStore.openSeriesAsTitle();
-    if (seriesId) {
-        const sort = (0, utils_1.convertSort)(request.sort?.id) ?? utils_1.Sort.Number;
-        const chapters = (await (0, api_1.getSeriesChapters)(seriesId
-        // buildSort(sort, request.sort?.ascending),
-        // filters,
-        // request.page
-        )).chapters.map((chapter) => (0, utils_1.chapterToHighlight)(chapter, host, apiKey));
-        return {
-            results: chapters,
-            isLastPage: chapters.length < utils_1.RESULT_COUNT,
-        };
-    }
-    else if (libraryId) {
-        const sort = (0, utils_1.convertSort)(request.sort?.id) ?? utils_1.Sort.DateUpdated;
-        const results = (await (0, api_1.getLibrarySeries)(libraryId, 
-        // buildSort(sort, request.sort?.ascending),
-        // filters,
-        request.page)).map((v) => (0, utils_1.seriesToHighlight)(v, host, apiKey, !(asTitle ?? false)));
-        return {
-            results,
-            isLastPage: results.length < utils_1.RESULT_COUNT,
-        };
-    }
-    const isSeriesDirectory = request.context?.isSeriesDirectory ?? false;
-    if (isSeriesDirectory) {
-        const sort = (0, utils_1.convertSort)(request.sort?.id) ?? utils_1.Sort.DateUpdated;
-        const results = (await (0, api_1.getLibrarySeries)(libraryId, 
-        // buildSort(sort, request.sort?.ascending),
-        // filters,
-        request.page)).map((v) => (0, utils_1.seriesToHighlight)(v, host, apiKey, !(asTitle ?? false)));
-        return {
-            results,
-            isLastPage: results.length < utils_1.RESULT_COUNT,
-        };
-    }
-    // } else {
-    //   const sort = convertSort(request.sort?.id) ?? Sort.DateAdded;
-    //   const results = (
-    //     await getSeriesChapters(
-    //       series:
-    //     )
-    //     )
-    //   ).map((v) => chapterToHighlight(v, host, apiKey));
+    const results = await Promise.all((await (0, api_1.getLibrarySeries)(libraryId, request)).map(async (v) => await (0, utils_1.seriesToHighlight)(v, host, apiKey)));
     return {
-        results: [],
-        isLastPage: true,
+        results,
+        isLastPage: results.length < utils_1.RESULT_COUNT,
     };
 }
+async function fetchFilterOptions(libraryId) {
+    const genres = await (0, metadata_1.getGenres)(libraryId ? [libraryId] : undefined);
+    const peoples = await (0, metadata_1.getPeoples)(libraryId ? [libraryId] : undefined);
+    const tags = await (0, metadata_1.getTags)(libraryId ? [libraryId] : undefined);
+    const languages = await (0, metadata_1.getLanguages)(libraryId ? [libraryId] : undefined);
+    return [
+        {
+            id: "genres",
+            title: "Genres",
+            type: daisuke_1.FilterType.EXCLUDABLE_MULTISELECT,
+            options: genres.map((genre) => ({
+                id: genre.id?.toString() ?? "",
+                title: genre.title ?? "Untitled",
+            })),
+        },
+        {
+            id: "languages",
+            title: "Languages",
+            type: daisuke_1.FilterType.MULTISELECT,
+            options: languages.map((lang) => ({
+                id: lang.isoCode ?? "",
+                title: lang.title ?? "Untitled",
+            })),
+        },
+        {
+            id: "peoples",
+            title: "People",
+            type: daisuke_1.FilterType.SELECT,
+            options: peoples.map((person) => ({
+                id: person.id?.toString() ?? "",
+                title: person.name ?? "Untitled",
+            })),
+        },
+        {
+            id: "tags",
+            title: "Tags",
+            type: daisuke_1.FilterType.EXCLUDABLE_MULTISELECT,
+            options: tags.map((tag) => ({
+                id: tag.id?.toString() ?? "",
+                title: tag.title ?? "Untitled",
+            })),
+        },
+    ];
+}
 
-},{"../api":2,"../store":12,"../utils":15}],9:[function(require,module,exports){
+},{"../api":2,"../api/metadata":4,"../utils":20,"@suwatte/daisuke":21}],10:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.KavitaPageProvider = void 0;
+const library_1 = require("../api/library");
+const api_1 = require("../api");
+exports.KavitaPageProvider = {
+    async getLibraryPageLinks() {
+        const library = await (0, library_1.getLibraries)();
+        const host = await (0, api_1.getHost)();
+        const apiKey = await (0, api_1.getApiKey)();
+        return library.map((lib) => ({
+            id: lib.id?.toString() ?? lib.name,
+            title: lib.name ?? "Untitled",
+            cover: lib.coverImage
+                ? `${host}/api/image/library-cover?libraryId=${lib.id}&apiKey=${apiKey}`
+                : undefined,
+            link: {
+                request: {
+                    page: 1,
+                    context: {
+                        libraryId: lib.id,
+                    },
+                },
+            },
+        }));
+    },
+    async getBrowsePageLinks() {
+        // const library = await getLibraries()
+        const sideNavInfo = await (0, library_1.getSideNavInfo)();
+        const host = await (0, api_1.getHost)();
+        const apiKey = await (0, api_1.getApiKey)();
+        return [
+            {
+                title: "Home",
+                link: {
+                    page: {
+                        id: "home",
+                    },
+                },
+            },
+            ...sideNavInfo.map((nav) => ({
+                id: nav.libraryId?.toString() ?? nav.name,
+                title: nav.name ?? "Untitled",
+                cover: nav.library?.coverImage
+                    ? `${host}/api/image/library-cover?libraryId=${nav.libraryId}&apiKey=${apiKey}`
+                    : undefined,
+                link: {
+                    request: {
+                        page: 1,
+                        context: {
+                            libraryId: nav.libraryId,
+                        },
+                        configID: nav.libraryId ? nav.libraryId.toString() : undefined,
+                    },
+                },
+            })),
+        ];
+    },
+};
+// const getPageLinkLabel = (nav): PageLinkLabel => {
+//   switch (nav.name) {
+//   }
+// }
+
+},{"../api":2,"../api/library":3}],11:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.KavitaPageLinkResolver = void 0;
 const daisuke_1 = require("@suwatte/daisuke");
 const api_1 = require("../api");
 const utils_1 = require("../utils");
-const store_1 = require("../store");
 exports.KavitaPageLinkResolver = {
     getSectionsForPage: async function (link) {
         switch (link.id) {
-            case "all":
             case "home":
-            case "library": {
-                return buildBrowseLibrarySections();
-            }
+                return buildHomeLibrarySections();
+            case "library":
+                return [
+                    {
+                        id: "all_series",
+                        title: "Series",
+                        style: daisuke_1.SectionStyle.STANDARD_GRID,
+                    },
+                ];
         }
         throw new Error(`No Handler Providing sections for ${link.id}`);
     },
     resolvePageSection: function (link, sectionID) {
         switch (link.id) {
-            case "all":
-            case "home":
+            case "home": {
+                const libraryId = link.context?.libraryId ?? null;
+                return resolveLibrarySection(libraryId, sectionID);
+            }
             case "library": {
                 const libraryId = link.context?.libraryId ?? null;
                 return resolveLibrarySection(libraryId, sectionID);
@@ -605,7 +694,7 @@ exports.KavitaPageLinkResolver = {
     },
 };
 // Library Sections
-async function buildBrowseLibrarySections() {
+async function buildHomeLibrarySections() {
     const sections = [];
     const dashboardSections = await (0, api_1.getDashboardInfo)();
     for (const dashSection of dashboardSections) {
@@ -621,47 +710,7 @@ async function resolveLibrarySection(libraryId, sectionKey) {
     let items = [];
     const host = await (0, api_1.getHost)();
     const apiKey = await (0, api_1.getApiKey)();
-    const convertSeriesToItems = async (key) => {
-        const openAsTitle = await store_1.KavitaStore.openSeriesAsTitle();
-        const series = await (0, api_1.getLibrarySeries)(libraryId);
-        const highlights = (series ?? []).map((data) => (0, utils_1.seriesToHighlight)(data, host, apiKey, !openAsTitle));
-        return highlights;
-    };
     switch (sectionKey) {
-        case "search_directory": {
-            const highlights = [
-                (0, daisuke_1.Generate)({
-                    title: "All Books",
-                    cover: "",
-                    id: "all_books",
-                    link: {
-                        request: {
-                            page: 1,
-                            context: {
-                                isSeriesDirectory: false,
-                                libraryId,
-                            },
-                        },
-                    },
-                }),
-                (0, daisuke_1.Generate)({
-                    title: "All Series",
-                    cover: "",
-                    id: "all_series",
-                    link: {
-                        request: {
-                            page: 1,
-                            context: {
-                                isSeriesDirectory: true,
-                                libraryId,
-                            },
-                        },
-                    },
-                }),
-            ];
-            items = highlights;
-            break;
-        }
         // case "keep_reading": {
         //   const highlights = await getBooksForLibrary(
         //     libraryId,
@@ -673,24 +722,104 @@ async function resolveLibrarySection(libraryId, sectionKey) {
         // }
         case "on-deck": {
             const series = await (0, api_1.getOnDeckSeries)(libraryId);
-            items = series.map((data) => (0, utils_1.seriesToHighlight)(data, host, apiKey, false));
+            items = await Promise.all(series.map((data) => (0, utils_1.seriesToHighlight)(data, host, apiKey, true)));
             break;
         }
         case "recently-updated": {
-            const series = await (0, api_1.getRecentlyUpdatedSeries)(libraryId);
-            items = series.map((data) => (0, utils_1.seriesToHighlight)(data, host, apiKey, false));
+            const series = await (0, api_1.getRecentlyUpdatedSeries)();
+            items = await Promise.all(series.map((data) => (0, utils_1.seriesToHighlight)(data, host, apiKey)));
             break;
         }
         case "newly-added": {
-            const series = await (0, api_1.getRecentlyAddedSeries)(libraryId);
-            items = series.map((data) => (0, utils_1.seriesToHighlight)(data, host, apiKey, false));
+            const series = await (0, api_1.getRecentlyAddedSeries)();
+            items = await Promise.all(series.map((data) => (0, utils_1.seriesToHighlight)(data, host, apiKey)));
             break;
         }
     }
     return { items };
 }
 
-},{"../api":2,"../store":12,"../utils":15,"@suwatte/daisuke":16}],10:[function(require,module,exports){
+},{"../api":2,"../utils":20,"@suwatte/daisuke":21}],12:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.KavitaPreferenceProvider = void 0;
+const daisuke_1 = require("@suwatte/daisuke");
+const store_1 = require("../store");
+const utils_1 = require("../utils");
+exports.KavitaPreferenceProvider = {
+    getPreferenceMenu: async function () {
+        return {
+            sections: [
+                {
+                    header: "Core",
+                    children: [
+                        (0, daisuke_1.UIToggle)({
+                            id: "continuePointCover",
+                            title: "Change the Series Cover to the Volume Cover at Continue Point (will make more calls to the server)",
+                            value: await store_1.KavitaStore.continuePointCover(),
+                            async didChange(value) {
+                                await ObjectStore.set("continuePointCover", value);
+                            },
+                        }),
+                    ],
+                },
+                {
+                    header: "Debug",
+                    children: [
+                        (0, daisuke_1.UIToggle)({
+                            id: "clearCache",
+                            title: "Clear Cache",
+                            value: await store_1.KavitaStore.clearCache(),
+                            async didChange(value) {
+                                await ObjectStore.set("clearCache", value);
+                                if (value)
+                                    await (0, utils_1.clearCache)();
+                                await ObjectStore.set("clearCache", false);
+                            },
+                        }),
+                    ],
+                },
+            ],
+        };
+    },
+};
+
+},{"../store":16,"../utils":20,"@suwatte/daisuke":21}],13:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.KavitaProgressSyncHandler = void 0;
+const api_1 = require("../api");
+exports.KavitaProgressSyncHandler = {
+    getProgressState: async function (seriesId) {
+        const { allVolumes } = await (0, api_1.getSeriesChapters)(seriesId);
+        const continuePointChapter = await (0, api_1.getSeriesContinuePoint)(seriesId);
+        const readChapterIds = [];
+        for (const volume of allVolumes ?? []) {
+            for (const chapter of volume.chapters ?? []) {
+                if (chapter.pagesRead && chapter.pagesRead >= (chapter.pages ?? 0)) {
+                    readChapterIds.push(chapter.id.toString());
+                }
+            }
+        }
+        const readingProgressState = {
+            readChapterIds,
+            currentReadingState: {
+                chapterId: continuePointChapter?.id.toString() ?? "",
+                page: continuePointChapter?.pagesRead ?? 0,
+                progress: continuePointChapter?.pagesRead
+                    ? Math.round((continuePointChapter.pagesRead / continuePointChapter.pages) *
+                        100) / 100
+                    : 0,
+                readDate: continuePointChapter?.lastReadingProgress
+                    ? new Date(continuePointChapter.lastReadingProgress)
+                    : new Date(),
+            },
+        };
+        return readingProgressState;
+    },
+};
+
+},{"../api":2}],14:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.KavitaSetupProvider = void 0;
@@ -718,6 +847,7 @@ exports.KavitaSetupProvider = {
                             id: "apiKey",
                             title: "API Key",
                             value: (await store_1.KavitaStore.apiKey()) ?? "",
+                            secure: true,
                         }),
                     ],
                 }
@@ -728,7 +858,7 @@ exports.KavitaSetupProvider = {
         if (!host.endsWith("/"))
             host += "/";
         await ObjectStore.set("host", host);
-        await ObjectStore.set("apiKey", apiKey);
+        await SecureStore.set("apiKey", apiKey);
         try {
             await (0, api_1.healthCheck)();
         }
@@ -744,7 +874,7 @@ exports.KavitaSetupProvider = {
     },
 };
 
-},{"../api":2,"../store":12,"@suwatte/daisuke":16}],11:[function(require,module,exports){
+},{"../api":2,"../store":16,"@suwatte/daisuke":21}],15:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Target = void 0;
@@ -754,12 +884,15 @@ const auth_1 = require("./impl/auth");
 const setup_1 = require("./impl/setup");
 const directoryHandler_1 = require("./impl/directoryHandler");
 const pageLinkResolver_1 = require("./impl/pageLinkResolver");
+const pageLinkProvider_1 = require("./impl/pageLinkProvider");
 const chapterEvent_1 = require("./impl/chapterEvent");
+const progressSync_1 = require("./impl/progressSync");
+const preference_1 = require("./impl/preference");
 // Info
 const info = {
     id: "org.kavita",
     name: "Kavita",
-    version: 0.01,
+    version: 0.2,
     minSupportedAppVersion: "6.0.0",
     thumbnail: "kavita.png",
     website: "https://www.kavitareader.com",
@@ -772,12 +905,10 @@ const config = {
     disableLibraryActions: false, // Disable being able to add to user library
     disableContentLinking: true,
     disableCustomThumbnails: true,
-    disableLanguageFlags: true,
     disableMigrationDestination: true,
     disableTrackerLinking: true,
     disableUpdateChecks: true,
     allowsMultipleInstances: true,
-    requiresAuthenticationToAccessContent: true,
 };
 exports.Target = {
     info,
@@ -786,66 +917,271 @@ exports.Target = {
     ...contentSource_1.KavitaContentSource,
     ...setup_1.KavitaSetupProvider,
     ...directoryHandler_1.KavitaDirectoryHandler,
-    // ...KavitaPageProvider,
+    ...pageLinkProvider_1.KavitaPageProvider,
     ...pageLinkResolver_1.KavitaPageLinkResolver,
     ...chapterEvent_1.KavitaChapterEvent,
+    ...progressSync_1.KavitaProgressSyncHandler,
+    ...preference_1.KavitaPreferenceProvider,
 };
 
-},{"./impl/auth":5,"./impl/chapterEvent":6,"./impl/contentSource":7,"./impl/directoryHandler":8,"./impl/pageLinkResolver":9,"./impl/setup":10,"@suwatte/daisuke":16}],12:[function(require,module,exports){
+},{"./impl/auth":6,"./impl/chapterEvent":7,"./impl/contentSource":8,"./impl/directoryHandler":9,"./impl/pageLinkProvider":10,"./impl/pageLinkResolver":11,"./impl/preference":12,"./impl/progressSync":13,"./impl/setup":14,"@suwatte/daisuke":21}],16:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.KavitaStore = void 0;
 exports.KavitaStore = {
     host: () => ObjectStore.string("host"),
-    apiKey: () => ObjectStore.string("apiKey"),
-    credentials: () => SecureStore.string("credentials"),
+    apiKey: () => SecureStore.string("apiKey"),
     jwt: () => SecureStore.string("jwt"),
     authenticated: () => ObjectStore.get("authenticated"),
-    openSeriesAsTitle: () => ObjectStore.boolean("openAsTitle"),
+    continuePointCover: () => ObjectStore.boolean("continuePointCover"),
+    enableLogging: () => ObjectStore.boolean("enableLogging"),
+    clearCache: () => ObjectStore.boolean("clearCache"),
 };
 
-},{}],13:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
+"use strict";
+/**
+ * Cache utilities for Kavita API requests
+ * Uses ObjectStore to cache responses with TTL (Time To Live)
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.CACHE_TTL = void 0;
+exports.isCacheValid = isCacheValid;
+exports.getCachedData = getCachedData;
+exports.setCachedData = setCachedData;
+exports.clearCache = clearCache;
+exports.generateCacheKey = generateCacheKey;
+/**
+ * Cache TTL constants in milliseconds
+ */
+exports.CACHE_TTL = {
+    LIBRARIES: 3600000, // 1 hour - Libraries rarely change
+    SERIES_METADATA: 3600000, // 1 hour - Metadata is relatively static
+    SERIES_DETAILS: 900000, // 15 minutes - Series details may update with new chapters
+    SERIES_CHAPTERS: 600000, // 10 minutes - Chapters can be added
+    READING_PROFILE: 3600000, // 1 hour - Reading profiles are relatively static
+    DASHBOARD: 300000, // 5 minutes - Dashboard should be relatively fresh
+    SIDENAV: 300000, // 5 minutes - Side navigation info
+};
+/**
+ * Checks if a cache entry is still valid based on its TTL
+ */
+function isCacheValid(entry) {
+    if (!entry)
+        return false;
+    const now = Date.now();
+    return now - entry.timestamp < entry.ttl;
+}
+/**
+ * Retrieves cached data from ObjectStore if valid
+ * @param cacheKey The key to retrieve from cache
+ * @returns The cached data if valid, null otherwise
+ */
+async function getCachedData(cacheKey) {
+    try {
+        const cached = await ObjectStore.get(cacheKey);
+        if (cached && isCacheValid(cached)) {
+            console.log(`Cache hit for: ${cacheKey}`);
+            return cached.data;
+        }
+        console.log(`Cache miss for: ${cacheKey}`);
+        return null;
+    }
+    catch (error) {
+        console.error(`Error reading cache for ${cacheKey}:`, error);
+        return null;
+    }
+}
+/**
+ * Stores data in cache with TTL
+ * @param cacheKey The key to store in cache
+ * @param data The data to cache
+ * @param ttl Time to live in milliseconds
+ */
+async function setCachedData(cacheKey, data, ttl) {
+    try {
+        const entry = {
+            data,
+            timestamp: Date.now(),
+            ttl,
+        };
+        await ObjectStore.set(cacheKey, entry);
+        console.log(`Cached data for: ${cacheKey} (TTL: ${ttl}ms)`);
+    }
+    catch (error) {
+        console.error(`Error caching data for ${cacheKey}:`, error);
+    }
+}
+/**
+ * Clears cache entries
+ * @param pattern Optional pattern to match cache keys. If not provided, clears all cache entries.
+ *                Pattern matching: clears keys that start with the pattern (prefix matching)
+ * @example
+ * clearCache() // Clears all cache
+ * clearCache("cache_series_") // Clears all series-related cache
+ * clearCache("cache_libraries") // Clears only libraries cache
+ */
+async function clearCache(pattern) {
+    try {
+        if (!pattern) {
+            console.log("Clearing all cache entries");
+            // Clear all cache entries by removing known cache keys
+            const allKeys = [
+                "cache_libraries",
+                ...Object.keys(exports.CACHE_TTL).map(k => `cache_${k.toLowerCase()}`)
+            ];
+            for (const key of allKeys) {
+                await ObjectStore.remove(key);
+            }
+            console.log("Cleared all cache");
+        }
+        else {
+            console.log(`Clearing cache entries matching pattern: ${pattern}`);
+            // For pattern-based clearing, we need to track which keys exist
+            // Since ObjectStore doesn't support key listing, we'll clear specific known patterns
+            // This is a limitation of the current API
+            await ObjectStore.remove(pattern);
+            console.log(`Cleared cache for pattern: ${pattern}`);
+        }
+    }
+    catch (error) {
+        console.error(`Error clearing cache:`, error);
+    }
+}
+/**
+ * Generates a cache key for a request
+ * @param prefix The prefix for the cache key (e.g., "series", "libraries")
+ * @param id Optional ID to append to the key
+ * @returns A formatted cache key
+ */
+function generateCacheKey(prefix, id) {
+    return id ? `cache_${prefix}_${id}` : `cache_${prefix}`;
+}
+
+},{}],18:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.FilterOptions = exports.ReadStatus = exports.SeriesStatus = exports.RESULT_COUNT = exports.SortOptions = exports.Sort = exports.DirectoryType = void 0;
+exports.getAgeRatingTitle = exports.metadataFields = exports.creatorFields = exports.ReadStatus = exports.SeriesStatus = exports.RESULT_COUNT = exports.genreMap = exports.FilterField = exports.SortOptions = exports.Sort = exports.AgeRating = exports.DirectoryType = void 0;
 const daisuke_1 = require("@suwatte/daisuke");
 var DirectoryType;
 (function (DirectoryType) {
     DirectoryType["Series"] = "SERIES";
     DirectoryType["Library"] = "LIBRARY";
 })(DirectoryType || (exports.DirectoryType = DirectoryType = {}));
+var AgeRating;
+(function (AgeRating) {
+    AgeRating[AgeRating["NotApplicable"] = -1] = "NotApplicable";
+    AgeRating[AgeRating["Unknown"] = 0] = "Unknown";
+    AgeRating[AgeRating["RatingPending"] = 1] = "RatingPending";
+    AgeRating[AgeRating["EarlyChildhood"] = 2] = "EarlyChildhood";
+    AgeRating[AgeRating["Everyone"] = 3] = "Everyone";
+    AgeRating[AgeRating["G"] = 4] = "G";
+    AgeRating[AgeRating["Everyone10Plus"] = 5] = "Everyone10Plus";
+    AgeRating[AgeRating["PG"] = 6] = "PG";
+    AgeRating[AgeRating["KidsToAdults"] = 7] = "KidsToAdults";
+    AgeRating[AgeRating["Teen"] = 8] = "Teen";
+    AgeRating[AgeRating["Mature15Plus"] = 9] = "Mature15Plus";
+    AgeRating[AgeRating["Mature17Plus"] = 10] = "Mature17Plus";
+    AgeRating[AgeRating["Mature"] = 11] = "Mature";
+    AgeRating[AgeRating["R18Plus"] = 12] = "R18Plus";
+    AgeRating[AgeRating["AdultsOnly"] = 13] = "AdultsOnly";
+    AgeRating[AgeRating["X18Plus"] = 14] = "X18Plus";
+})(AgeRating || (exports.AgeRating = AgeRating = {}));
 var Sort;
 (function (Sort) {
-    Sort["Name"] = "name";
-    Sort["DateAdded"] = "created";
-    Sort["DateUpdated"] = "lastModifiedDate";
-    Sort["ReleaseDate"] = "lastChapterAdded";
-    Sort["BooksCount"] = "booksCount";
-    Sort["ReadDate"] = "latestReadDate";
-    Sort["Number"] = "metadata.numberSort";
+    Sort[Sort["SortName"] = 1] = "SortName";
+    Sort[Sort["Created"] = 2] = "Created";
+    Sort[Sort["lastModified"] = 3] = "lastModified";
+    Sort[Sort["ItemAdded"] = 4] = "ItemAdded";
+    Sort[Sort["TimeToRead"] = 5] = "TimeToRead";
+    Sort[Sort["ReleaseYear"] = 6] = "ReleaseYear";
+    Sort[Sort["LastRead"] = 7] = "LastRead";
+    Sort[Sort["AverageRating"] = 8] = "AverageRating";
+    Sort[Sort["Random"] = 9] = "Random";
 })(Sort || (exports.Sort = Sort = {}));
 exports.SortOptions = [
     {
-        id: Sort.Name,
+        id: String(Sort.SortName),
         title: "Name",
     },
     {
-        id: Sort.DateAdded,
-        title: "Date Added",
+        id: String(Sort.Created),
+        title: "Created",
     },
     {
-        id: Sort.DateUpdated,
-        title: "Date Updated",
+        id: String(Sort.lastModified),
+        title: "Last Modified",
     },
     {
-        id: Sort.ReleaseDate,
-        title: "Release Date",
+        id: String(Sort.ItemAdded),
+        title: "Item Added",
     },
     {
-        id: Sort.BooksCount,
-        title: "Books Count",
+        id: String(Sort.TimeToRead),
+        title: "Time to Read",
+    },
+    {
+        id: String(Sort.ReleaseYear),
+        title: "Release Year",
+    },
+    {
+        id: String(Sort.LastRead),
+        title: "Last Read",
+    },
+    {
+        id: String(Sort.AverageRating),
+        title: "Average Rating",
+    },
+    {
+        id: String(Sort.Random),
+        title: "Random",
     },
 ];
+var FilterField;
+(function (FilterField) {
+    FilterField[FilterField["Summary"] = 0] = "Summary";
+    FilterField[FilterField["SeriesName"] = 1] = "SeriesName";
+    FilterField[FilterField["PublicationStatus"] = 2] = "PublicationStatus";
+    FilterField[FilterField["Languages"] = 3] = "Languages";
+    FilterField[FilterField["AgeRating"] = 4] = "AgeRating";
+    FilterField[FilterField["UserRating"] = 5] = "UserRating";
+    FilterField[FilterField["Tags"] = 6] = "Tags";
+    FilterField[FilterField["CollectionTags"] = 7] = "CollectionTags";
+    FilterField[FilterField["Translators"] = 8] = "Translators";
+    FilterField[FilterField["Characters"] = 9] = "Characters";
+    FilterField[FilterField["Publisher"] = 10] = "Publisher";
+    FilterField[FilterField["Editor"] = 11] = "Editor";
+    FilterField[FilterField["CoverArtist"] = 12] = "CoverArtist";
+    FilterField[FilterField["Letterer"] = 13] = "Letterer";
+    FilterField[FilterField["Colorist"] = 14] = "Colorist";
+    FilterField[FilterField["Inker"] = 15] = "Inker";
+    FilterField[FilterField["Penciller"] = 16] = "Penciller";
+    FilterField[FilterField["Writers"] = 17] = "Writers";
+    FilterField[FilterField["Genres"] = 18] = "Genres";
+    FilterField[FilterField["Libraries"] = 19] = "Libraries";
+    FilterField[FilterField["ReadProgress"] = 20] = "ReadProgress";
+    FilterField[FilterField["Formats"] = 21] = "Formats";
+    FilterField[FilterField["ReleaseYear"] = 22] = "ReleaseYear";
+    FilterField[FilterField["ReadTime"] = 23] = "ReadTime";
+    FilterField[FilterField["Path"] = 24] = "Path";
+    FilterField[FilterField["FilePath"] = 25] = "FilePath";
+    FilterField[FilterField["WantToRead"] = 26] = "WantToRead";
+    FilterField[FilterField["ReadingDate"] = 27] = "ReadingDate";
+    FilterField[FilterField["AverageRating"] = 28] = "AverageRating";
+    FilterField[FilterField["Imprint"] = 29] = "Imprint";
+    FilterField[FilterField["Team"] = 30] = "Team";
+    FilterField[FilterField["Location"] = 31] = "Location";
+    FilterField[FilterField["ReadLast"] = 32] = "ReadLast";
+    FilterField[FilterField["FileSize"] = 33] = "FileSize";
+})(FilterField || (exports.FilterField = FilterField = {}));
+exports.genreMap = {
+    Manga: daisuke_1.ContentType.MANGA,
+    Manhwa: daisuke_1.ContentType.MANHWA,
+    Webtoon: daisuke_1.ContentType.MANHWA,
+    Manhua: daisuke_1.ContentType.MANHUA,
+    Comic: daisuke_1.ContentType.COMIC,
+    Novel: daisuke_1.ContentType.NOVEL,
+};
 exports.RESULT_COUNT = 30;
 var SeriesStatus;
 (function (SeriesStatus) {
@@ -860,86 +1196,209 @@ var ReadStatus;
     ReadStatus["InProgress"] = "IN_PROGRESS";
     ReadStatus["Read"] = "READ";
 })(ReadStatus || (exports.ReadStatus = ReadStatus = {}));
-exports.FilterOptions = [
-    {
-        id: "read_status",
-        title: "Read Status",
-        type: daisuke_1.FilterType.MULTISELECT,
-        options: [
-            {
-                id: ReadStatus.Unread,
-                title: "Unread",
-            },
-            {
-                id: ReadStatus.InProgress,
-                title: "In Progress",
-            },
-            {
-                id: ReadStatus.Read,
-                title: "Read",
-            },
-        ],
-    },
-    {
-        id: "status",
-        title: "Series Status",
-        type: daisuke_1.FilterType.MULTISELECT,
-        options: [
-            {
-                id: SeriesStatus.Ended,
-                title: "Ended",
-            },
-            {
-                id: SeriesStatus.Ongoing,
-                title: "Ongoing",
-            },
-            {
-                id: SeriesStatus.Abandoned,
-                title: "Abandoned",
-            },
-            {
-                id: SeriesStatus.Hiatus,
-                title: "Hiatus",
-            },
-        ],
-    },
+exports.creatorFields = [
+    "writers",
+    "coverArtists",
+    "pencillers",
+    "inkers",
+    "colorists",
+    "letterers",
+    "editors",
 ];
+exports.metadataFields = [
+    { key: "genres", title: "Genres", prop: "title", field: FilterField.Genres },
+    {
+        key: "writers",
+        title: "Writers",
+        prop: "name",
+        field: FilterField.Writers,
+    },
+    {
+        key: "coverArtists",
+        title: "Cover Artists",
+        prop: "name",
+        field: FilterField.CoverArtist,
+    },
+    {
+        key: "publishers",
+        title: "Publishers",
+        prop: "name",
+        field: FilterField.Publisher,
+    },
+    {
+        key: "characters",
+        title: "Characters",
+        prop: "name",
+        field: FilterField.Characters,
+    },
+    {
+        key: "pencillers",
+        title: "Pencillers",
+        prop: "name",
+        field: FilterField.Penciller,
+    },
+    { key: "inkers", title: "Inkers", prop: "name", field: FilterField.Inker },
+    {
+        key: "imprints",
+        title: "Imprints",
+        prop: "name",
+        field: FilterField.Imprint,
+    },
+    {
+        key: "colorists",
+        title: "Colorists",
+        prop: "name",
+        field: FilterField.Colorist,
+    },
+    {
+        key: "letterers",
+        title: "Letterers",
+        prop: "name",
+        field: FilterField.Letterer,
+    },
+    { key: "editors", title: "Editors", prop: "name", field: FilterField.Editor },
+    {
+        key: "translators",
+        title: "Translators",
+        prop: "name",
+        field: FilterField.Translators,
+    },
+    { key: "teams", title: "Teams", prop: "name", field: FilterField.Team },
+    {
+        key: "locations",
+        title: "Locations",
+        prop: "name",
+        field: FilterField.Location,
+    },
+    { key: "tags", title: "Tags", prop: "title", field: FilterField.Tags },
+];
+const getAgeRatingTitle = (ageRating) => {
+    switch (ageRating) {
+        case AgeRating.NotApplicable:
+            return "Not Applicable";
+        case AgeRating.RatingPending:
+            return "Rating Pending";
+        case AgeRating.EarlyChildhood:
+            return "Early Childhood";
+        case AgeRating.Everyone:
+            return "Everyone";
+        case AgeRating.G:
+            return "G";
+        case AgeRating.Everyone10Plus:
+            return "Everyone 10+";
+        case AgeRating.PG:
+            return "PG";
+        case AgeRating.KidsToAdults:
+            return "Kids to Adults";
+        case AgeRating.Teen:
+            return "Teen";
+        case AgeRating.Mature15Plus:
+            return "MA15+";
+        case AgeRating.Mature17Plus:
+            return "Mature 17+";
+        case AgeRating.Mature:
+            return "M";
+        case AgeRating.R18Plus:
+            return "R18+";
+        case AgeRating.AdultsOnly:
+            return "Adults Only 18+";
+        case AgeRating.X18Plus:
+            return "X18+";
+        case AgeRating.Unknown:
+        default:
+            return "Unknown";
+    }
+};
+exports.getAgeRatingTitle = getAgeRatingTitle;
 
-},{"@suwatte/daisuke":16}],14:[function(require,module,exports){
+},{"@suwatte/daisuke":21}],19:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getSectionTitle = exports.recentlyAddedItemToSeries = exports.detailedSeriesToContent = exports.KavitaChapterToChapter = exports.chapterToHighlight = exports.seriesToHighlight = exports.genURL = exports.buildSort = exports.convertSort = void 0;
+exports.getSectionTitle = exports.recentlyAddedItemToSeries = exports.getContentTypeFromGenre = exports.detailedSeriesToContent = exports.volumeToChapter = exports.getChapterPages = exports.getKavitaChapters = exports.chapterToHighlight = exports.seriesToHighlight = exports.genURL = exports.buildTagFilterStatement = exports.buildFilterStatements = exports.buildSort = void 0;
 const daisuke_1 = require("@suwatte/daisuke");
 const api_1 = require("../api");
 const constants_1 = require("./constants");
+const store_1 = require("../store");
 // import { BookDto, SeriesDto } from "../types";
 // import { Sort } from "./constants";
-const convertSort = (val) => {
-    switch (val) {
-        case "nameSort":
-            return constants_1.Sort.Name;
-        case "created":
-            return constants_1.Sort.DateAdded;
-        case "lastModifiedDate":
-            return constants_1.Sort.DateUpdated;
-        case "booksMetadata.releaseDate":
-            return constants_1.Sort.ReleaseDate;
-        case "booksCount":
-            return constants_1.Sort.BooksCount;
-        case "readProgress.readDate":
-            return constants_1.Sort.ReadDate;
-        case "metadata.numberSort":
-            return constants_1.Sort.Number;
-        default:
-            return undefined;
-    }
+const buildSort = (sort) => {
+    return {
+        sortField: parseInt(sort.id),
+        isAscending: sort.ascending ? true : false,
+    };
 };
-exports.convertSort = convertSort;
-/**
- * builds the sort query param using the key and its order
- */
-const buildSort = (key, asc) => `${key},${asc ? "asc" : "desc"}`;
 exports.buildSort = buildSort;
+const buildFilterStatements = (filters) => {
+    const statements = [];
+    // Process tags
+    if (filters?.tags) {
+        filters.tags.included.forEach((value) => {
+            statements.push({
+                field: constants_1.FilterField.Tags,
+                value,
+                comparison: 0, // included
+            });
+        });
+        filters.tags.excluded.forEach((value) => {
+            statements.push({
+                field: constants_1.FilterField.Tags,
+                value,
+                comparison: 9, // excluded
+            });
+        });
+    }
+    // Process genres
+    if (filters?.genres) {
+        filters.genres.included.forEach((value) => {
+            statements.push({
+                field: constants_1.FilterField.Genres,
+                value,
+                comparison: 0, // included
+            });
+        });
+        filters?.genres.excluded.forEach((value) => {
+            statements.push({
+                field: constants_1.FilterField.Genres,
+                value,
+                comparison: 9, // excluded
+            });
+        });
+    }
+    // Process languages
+    if (filters?.languages && filters.languages.length > 0) {
+        filters.languages.forEach((value) => {
+            statements.push({
+                field: constants_1.FilterField.Languages,
+                value,
+                comparison: 0, // included
+            });
+        });
+    }
+    // Process peoples
+    if (filters?.peoples) {
+        const peopleArray = Array.isArray(filters.peoples)
+            ? filters.peoples
+            : [filters.peoples];
+        peopleArray.forEach((value) => {
+            statements.push({
+                field: constants_1.FilterField.Writers,
+                value,
+                comparison: 0, // included
+            });
+        });
+    }
+    return statements;
+};
+exports.buildFilterStatements = buildFilterStatements;
+const buildTagFilterStatement = (tagId, propertyId) => {
+    const metadataField = constants_1.metadataFields.find((field) => field.key === propertyId);
+    return {
+        field: metadataField?.field ?? constants_1.FilterField.Tags,
+        value: tagId,
+        comparison: 0,
+    };
+};
+exports.buildTagFilterStatement = buildTagFilterStatement;
 /**
  * Generates a url using the user specified host
  */
@@ -947,34 +1406,47 @@ const genURL = async (url) => {
     return `${await (0, api_1.getHost)()}${url}`;
 };
 exports.genURL = genURL;
-const seriesToHighlight = (series, 
-// seriesMetadata: SeriesMetadataDto,
-host, apiKey, asRequest) => {
-    const cover = `${host}/api/image/series-cover?seriesId=${series.id}&apiKey=${apiKey}`;
-    // const subtitle = `${seriesMetadata.totalCount} Chapter${
-    //   seriesMetadata.totalCount != 1 ? "s" : ""
-    // }`
+const getSeriesSubtitle = (volumes, chapters) => {
+    const volumeCount = volumes.length;
+    const chapterCount = chapters?.length ?? 0;
+    const subtitleParts = [];
+    if (volumeCount > 0) {
+        subtitleParts.push(`${volumeCount} Volume${volumeCount !== 1 ? "s" : ""}`);
+    }
+    if (chapterCount > 0) {
+        subtitleParts.push(`${chapterCount} Chapter${chapterCount !== 1 ? "s" : ""}`);
+    }
+    return subtitleParts.join(" • ");
+};
+const getUnreadChapterCount = (chapters) => {
+    const unreadCount = chapters.filter((chapter) => (chapter.pagesRead ?? 0) < (chapter.pages ?? 0)).length;
+    const readCount = chapters.length - unreadCount;
+    return { unreadCount, readCount };
+};
+const seriesToHighlight = async (series, host, apiKey, asChapter = false) => {
+    const { volumes, allVolumes } = await (0, api_1.getSeriesChapters)(series.id?.toString());
+    const allChapters = allVolumes.flatMap((v) => v.chapters || []);
+    const cover = await getCurrentVolumeSeriesCover(series, volumes, host, apiKey);
     const title = series.name ?? series.originalName ?? series.localizedName ?? "Untitled";
+    let subtitle = "";
+    if (asChapter) {
+        const continuePointChapter = await (0, api_1.getSeriesContinuePoint)(series.id?.toString());
+        subtitle = continuePointChapter?.titleName ?? "";
+    }
+    else {
+        subtitle = getSeriesSubtitle(volumes, allChapters);
+    }
+    const { unreadCount, readCount } = getUnreadChapterCount(allChapters);
     return {
-        id: series.id?.toString() ?? "",
+        id: series.id?.toString(),
         title: title,
-        // subtitle,
+        subtitle: subtitle,
         cover,
-        // ...(series.totalReads && series.totalReads > 0 && seriesMetadata.totalCount !== undefined && {
-        //   badge: {
-        //     color: "#0096FF",
-        //     count: seriesMetadata.totalCount - (series.totalReads ?? 0),
-        //   },
-        // }),
-        ...(asRequest && {
-            link: {
-                request: {
-                    configID: "series",
-                    page: 1,
-                    context: {
-                        seriesId: series.id,
-                    },
-                },
+        ...(readCount > 0 &&
+            unreadCount > 0 && {
+            badge: {
+                color: "#4ac694",
+                count: unreadCount,
             },
         }),
     };
@@ -997,87 +1469,144 @@ const chapterToHighlight = (chapter, host, apiKey) => {
     };
 };
 exports.chapterToHighlight = chapterToHighlight;
-// export const seriesToContinueChapter = async (
-//   series: SeriesDto,
-//   host: string
-// ): Promise<ChapterDto> => {}
-const KavitaChapterToChapter = (chapter, volumes, host, apiKey, index) => {
+const getCurrentVolumeSeriesCover = async (series, volumes, host, apiKey, continuePoint) => {
+    let cover = `${host}/api/Image/series-cover?seriesId=${series.id}&apiKey=${apiKey}`;
+    const continuePointCover = await store_1.KavitaStore.continuePointCover();
+    if (!continuePointCover)
+        return cover;
+    const continuePointChapter = continuePoint ?? (await (0, api_1.getSeriesContinuePoint)(series.id?.toString() ?? ""));
+    if (!continuePointChapter)
+        return cover;
+    const isChapterAlreadyRead = continuePointChapter.pagesRead >= continuePointChapter.pages;
+    const allChapters = volumes.flatMap((v) => v.chapters || []);
+    if (isChapterAlreadyRead && checkAllChaptersRead(allChapters)) {
+        const seriesMetadata = await (0, api_1.getSeriesMetadata)(series.id?.toString() ?? "");
+        if (seriesMetadata?.publicationStatus === daisuke_1.PublicationStatus.COMPLETED) {
+            return cover;
+        }
+        const lastVolume = volumes[volumes.length - 1];
+        cover = lastVolume?.id
+            ? `${host}/api/Image/volume-cover?volumeId=${lastVolume.id}&apiKey=${apiKey}`
+            : cover;
+    }
+    else {
+        const volumeId = continuePointChapter?.volumeId;
+        const volume = volumes.find((v) => v.id === volumeId) ?? volumes[volumes.length - 1];
+        cover = volume?.id
+            ? `${host}/api/Image/volume-cover?volumeId=${volume?.id}&apiKey=${apiKey}`
+            : cover;
+    }
+    return cover;
+};
+const checkAllChaptersRead = (chapters) => {
+    return chapters.every((chapter) => (chapter.pagesRead ?? 0) >= (chapter.pages ?? 0));
+};
+const getKavitaChapters = async (seriesId, volumesList) => {
+    const { chaptersVolume, volumes, specialsVolume } = volumesList ?? (await (0, api_1.getSeriesChapters)(seriesId, true));
+    const chapters = [
+        ...volumes.flatMap((v) => v.chapters || []),
+        ...(chaptersVolume?.chapters || []),
+        ...(specialsVolume?.chapters || []),
+    ].reverse();
+    const host = await (0, api_1.getHost)();
+    const apiKey = await (0, api_1.getApiKey)();
+    return chapters.map((chapter, index) => {
+        const pages = (0, exports.getChapterPages)(chapter, host, apiKey);
+        const volume = volumes.find((v) => v.id === chapter.volumeId);
+        return {
+            chapterId: chapter.id?.toString(),
+            title: chapter.titleName ||
+                (chapter.minNumber !== chapter.maxNumber ? chapter.title : undefined) ||
+                undefined,
+            date: chapter.releaseDate
+                ? new Date(chapter.releaseDate)
+                : chapter.created
+                    ? new Date(chapter.created)
+                    : new Date(),
+            number: chapter.sortOrder === -100000
+                ? volume?.minNumber ?? 0
+                : chapter.sortOrder ?? 0,
+            volume: volume ? volume.minNumber : undefined,
+            index,
+            webUrl: chapter.webLinks?.[0],
+            thumbnail: `${host}/api/Image/chapter-cover?chapterId=${chapter.id}&apiKey=${apiKey}`,
+            language: convertLanguage(chapter.language),
+            data: {
+                pages,
+            },
+        };
+    });
+};
+exports.getKavitaChapters = getKavitaChapters;
+const getChapterPages = (chapter, host, apiKey) => {
     const pages = [];
-    for (let page = 1; page <= (chapter.pages ?? 0); page++) {
+    for (let page = 0; page < (chapter.pages ?? 0); page++) {
         pages.push({
             url: `${host}/api/Reader/image?chapterId=${chapter.id}&page=${page}&apiKey=${apiKey}`,
         });
     }
-    const volume = volumes.find((v) => v.id === chapter.volumeId);
+    return pages;
+};
+exports.getChapterPages = getChapterPages;
+const volumeToChapter = (volume, host, apiKey, index) => {
+    const chapter = volume.chapters[0];
+    const pages = (0, exports.getChapterPages)(chapter, host, apiKey);
     return {
-        chapterId: chapter.id?.toString(),
-        title: chapter.titleName ?? undefined,
-        date: chapter.created ? new Date(chapter.created) : new Date(1970, 0, 1),
-        number: chapter.sortOrder ?? 0,
-        volume: volume ? volume.minNumber : undefined,
+        chapterId: chapter.id?.toString() ?? "",
+        date: chapter.releaseDate
+            ? new Date(chapter.releaseDate)
+            : volume.created
+                ? new Date(volume.created)
+                : new Date(),
+        number: volume.minNumber ?? 0,
+        volume: volume.minNumber,
         index,
-        webUrl: chapter.webLinks?.[0],
-        thumbnail: `${host}/api/Image/chapter-cover?chapterId=${chapter.id}&apiKey=${apiKey}`,
+        thumbnail: `${host}/api/Image/volume-cover?volumeId=${volume.id}&apiKey=${apiKey}`,
         language: convertLanguage(chapter.language),
         data: {
             pages,
         },
     };
 };
-exports.KavitaChapterToChapter = KavitaChapterToChapter;
-const detailedSeriesToContent = async (series, seriesMetadata, readingProfile) => {
+exports.volumeToChapter = volumeToChapter;
+const detailedSeriesToContent = async (series, seriesMetadata, seriesChapters, readingProfile) => {
     const host = await (0, api_1.getHost)();
     const apiKey = await (0, api_1.getApiKey)();
-    const cover = `${host}/api/Image/series-cover?seriesId=${series.id}&apiKey=${apiKey}`;
+    const cover = await getCurrentVolumeSeriesCover(series, seriesChapters.volumes, host, apiKey);
     const info = [];
-    if (series.pagesRead == series.pages) {
-        info.push("Finished Reading");
+    if (seriesMetadata.language) {
+        const lang = new Intl.DisplayNames([], { type: "language" });
+        info.push(lang.of(seriesMetadata.language) ?? "");
     }
-    else if (series.pagesRead == 0) {
-        info.push("Not Started");
-    }
-    else if (series.pagesRead != 0) {
-        info.push("Started Reading");
-    }
+    if (seriesMetadata.ageRating !== undefined &&
+        seriesMetadata.ageRating !== constants_1.AgeRating.Unknown)
+        info.push((0, constants_1.getAgeRatingTitle)(seriesMetadata.ageRating));
+    if (seriesMetadata.releaseYear)
+        info.push(seriesMetadata.releaseYear?.toString());
+    info.push(`${series.pages ?? 0} Page${series.pages === 1 ? "" : "s"}`);
     const properties = [];
     const creators = [];
-    const creatorFields = ['writers', 'coverArtists', 'pencillers', 'inkers', 'colorists', 'letterers', 'editors'];
-    creatorFields.forEach((field) => {
+    constants_1.creatorFields.forEach((field) => {
         const data = seriesMetadata[field];
         if (data && data.length > 0) {
             data.forEach((item) => {
-                const name = item.name ?? '';
+                const name = item.name ?? "";
                 if (name && !creators.includes(name)) {
                     creators.push(name);
                 }
             });
         }
     });
-    const metadataFields = [
-        { key: 'genres', title: 'Genres', prop: 'title' },
-        { key: 'writers', title: 'Writers', prop: 'name' },
-        { key: 'coverArtists', title: 'Cover Artists', prop: 'name' },
-        { key: 'publishers', title: 'Publishers', prop: 'name' },
-        { key: 'characters', title: 'Characters', prop: 'name' },
-        { key: 'pencillers', title: 'Pencillers', prop: 'name' },
-        { key: 'inkers', title: 'Inkers', prop: 'name' },
-        { key: 'imprints', title: 'Imprints', prop: 'name' },
-        { key: 'colorists', title: 'Colorists', prop: 'name' },
-        { key: 'letterers', title: 'Letterers', prop: 'name' },
-        { key: 'editors', title: 'Editors', prop: 'name' },
-        { key: 'translators', title: 'Translators', prop: 'name' },
-        { key: 'teams', title: 'Teams', prop: 'name' },
-        { key: 'locations', title: 'Locations', prop: 'name' },
-    ];
-    metadataFields.forEach(({ key, title, prop }) => {
+    constants_1.metadataFields.forEach(({ key, title, prop }) => {
         const data = seriesMetadata[key];
         if (data && data.length > 0) {
             properties.push({
-                id: key.replace(/([A-Z])/g, '-$1').toLowerCase(),
+                id: key.replace(/([A-Z])/g, "-$1").toLowerCase(),
                 title,
                 tags: data.map((tag) => ({
-                    id: tag.id?.toString() ?? '',
-                    title: tag[prop] ?? '',
+                    id: tag.id?.toString() ?? "",
+                    title: tag[prop] ?? "",
+                    nsfw: [12, 13, 14].includes(seriesMetadata.ageRating ?? 0),
                 })),
             });
         }
@@ -1096,15 +1625,6 @@ const detailedSeriesToContent = async (series, seriesMetadata, readingProfile) =
                     title: child.trim(),
                 });
             }
-            else {
-                if (!groupedTags["tags"]) {
-                    groupedTags["tags"] = [];
-                }
-                groupedTags["tags"].push({
-                    id: tag.id?.toString() ?? "",
-                    title: tagTitle,
-                });
-            }
         });
         Object.entries(groupedTags).forEach(([key, tags]) => {
             properties.push({
@@ -1114,19 +1634,40 @@ const detailedSeriesToContent = async (series, seriesMetadata, readingProfile) =
             });
         });
     }
+    const additionalTitles = [];
+    if (series.localizedName && series.localizedName !== series.name) {
+        additionalTitles.push(series.localizedName);
+    }
+    if (series.originalName && series.originalName !== series.name) {
+        additionalTitles.push(series.originalName);
+    }
+    const chapters = await (0, exports.getKavitaChapters)(series.id?.toString(), seriesChapters);
     return {
         title: series.name ?? "Untitled",
-        additionalTitles: [series.localizedName ?? ""],
+        additionalTitles,
         summary: seriesMetadata?.summary || undefined,
         cover,
         creators,
+        contentType: (series?.libraryName ? constants_1.genreMap[series.libraryName] : undefined) ??
+            (0, exports.getContentTypeFromGenre)(seriesMetadata.genres ?? []),
         status: convertStatus(seriesMetadata.publicationStatus),
         info,
         properties,
         recommendedPanelMode: convertReadingMode(readingProfile),
+        chapters,
     };
 };
 exports.detailedSeriesToContent = detailedSeriesToContent;
+const getContentTypeFromGenre = (genres) => {
+    for (const genre of genres) {
+        const contentType = constants_1.genreMap[genre.title ?? ""];
+        if (contentType) {
+            return contentType;
+        }
+    }
+    return undefined;
+};
+exports.getContentTypeFromGenre = getContentTypeFromGenre;
 const recentlyAddedItemToSeries = async (item) => {
     return await (0, api_1.getSeries)(item.seriesId.toString());
 };
@@ -1150,10 +1691,8 @@ const convertReadingMode = (readingProfile) => {
     if (readingProfile.readerMode === 0) {
         switch (readingProfile.readingDirection) {
             case 0:
-                console.log("Returning Paged Comic");
                 return daisuke_1.ReadingMode.PAGED_COMIC;
             case 1:
-                console.log("Returning Paged Manga");
                 return daisuke_1.ReadingMode.PAGED_MANGA;
         }
     }
@@ -1199,7 +1738,7 @@ const convertLanguage = (lang) => {
     }
 };
 
-},{"../api":2,"./constants":13,"@suwatte/daisuke":16}],15:[function(require,module,exports){
+},{"../api":2,"../store":16,"./constants":18,"@suwatte/daisuke":21}],20:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -1218,8 +1757,9 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
 Object.defineProperty(exports, "__esModule", { value: true });
 __exportStar(require("./constants"), exports);
 __exportStar(require("./helpers"), exports);
+__exportStar(require("./cache"), exports);
 
-},{"./constants":13,"./helpers":14}],16:[function(require,module,exports){
+},{"./cache":17,"./constants":18,"./helpers":19}],21:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -1239,27 +1779,27 @@ Object.defineProperty(exports, "__esModule", { value: true });
 __exportStar(require("./runners"), exports);
 __exportStar(require("./types"), exports);
 
-},{"./runners":40,"./types":70}],17:[function(require,module,exports){
+},{"./runners":45,"./types":75}],22:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 
-},{}],18:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],19:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],20:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],21:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],22:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],23:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],24:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],25:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],26:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],24:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],25:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],26:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],27:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],28:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],29:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],30:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],31:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -1285,7 +1825,7 @@ __exportStar(require("./ContextMenuHandler"), exports);
 __exportStar(require("./GroupedUpdateProvider"), exports);
 __exportStar(require("./ImageRedrawHandler"), exports);
 
-},{"./ChapterEvent":18,"./ContentEvent":19,"./ContextMenuHandler":20,"./GroupedUpdateProvider":21,"./ImageRedrawHandler":22,"./LibrarySync":23,"./ProgressSync":24,"./StreamContextProvider":25}],27:[function(require,module,exports){
+},{"./ChapterEvent":23,"./ContentEvent":24,"./ContextMenuHandler":25,"./GroupedUpdateProvider":26,"./ImageRedrawHandler":27,"./LibrarySync":28,"./ProgressSync":29,"./StreamContextProvider":30}],32:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -1305,11 +1845,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 __exportStar(require("./handlers"), exports);
 __exportStar(require("./ContentSource"), exports);
 
-},{"./ContentSource":17,"./handlers":26}],28:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],29:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],30:[function(require,module,exports){
+},{"./ContentSource":22,"./handlers":31}],33:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],34:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],35:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -1329,7 +1869,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 __exportStar(require("./ContentTracker"), exports);
 __exportStar(require("./AdvancedTracker"), exports);
 
-},{"./AdvancedTracker":28,"./ContentTracker":29}],31:[function(require,module,exports){
+},{"./AdvancedTracker":33,"./ContentTracker":34}],36:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BasicAuthenticationUIIdentifier = void 0;
@@ -1339,19 +1879,19 @@ var BasicAuthenticationUIIdentifier;
     BasicAuthenticationUIIdentifier[BasicAuthenticationUIIdentifier["USERNAME"] = 1] = "USERNAME";
 })(BasicAuthenticationUIIdentifier || (exports.BasicAuthenticationUIIdentifier = BasicAuthenticationUIIdentifier = {}));
 
-},{}],32:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],33:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],34:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],35:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],36:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],37:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],38:[function(require,module,exports){
+},{}],37:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],38:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],39:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],40:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],41:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],42:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],43:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -1376,7 +1916,7 @@ __exportStar(require("./PageProvider"), exports);
 __exportStar(require("./Setup"), exports);
 __exportStar(require("./PageResolver"), exports);
 
-},{"./Authentication":31,"./DirectoryHandler":32,"./ImageRequest":33,"./PageProvider":34,"./PageResolver":35,"./Preferences":36,"./Setup":37}],39:[function(require,module,exports){
+},{"./Authentication":36,"./DirectoryHandler":37,"./ImageRequest":38,"./PageProvider":39,"./PageResolver":40,"./Preferences":41,"./Setup":42}],44:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -1401,7 +1941,7 @@ var RunnerEnvironment;
     RunnerEnvironment[RunnerEnvironment["TRACKER"] = 1] = "TRACKER";
 })(RunnerEnvironment || (exports.RunnerEnvironment = RunnerEnvironment = {}));
 
-},{"./extensions":38}],40:[function(require,module,exports){
+},{"./extensions":43}],45:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -1422,14 +1962,14 @@ __exportStar(require("./ContentSource"), exports);
 __exportStar(require("./Runner"), exports);
 __exportStar(require("./ContentTracker"), exports);
 
-},{"./ContentSource":27,"./ContentTracker":30,"./Runner":39}],41:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],42:[function(require,module,exports){
+},{"./ContentSource":32,"./ContentTracker":35,"./Runner":44}],46:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],47:[function(require,module,exports){
 "use strict";
 // Picker
 Object.defineProperty(exports, "__esModule", { value: true });
 
-},{}],43:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UIStepper = exports.UIButton = exports.UIDatePicker = exports.UITextField = exports.UIToggle = exports.UIMultiPicker = exports.UIPicker = void 0;
@@ -1449,7 +1989,7 @@ exports.UIButton = UIButton;
 const UIStepper = (props) => (Object.assign(Object.assign({}, props), { type: UIElements_1.UIComponentType.STEPPER }));
 exports.UIStepper = UIStepper;
 
-},{"./UIElements":44}],44:[function(require,module,exports){
+},{"./UIElements":49}],49:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UIComponentType = void 0;
@@ -1464,7 +2004,7 @@ var UIComponentType;
     UIComponentType[UIComponentType["DATEPICKER"] = 6] = "DATEPICKER";
 })(UIComponentType || (exports.UIComponentType = UIComponentType = {}));
 
-},{}],45:[function(require,module,exports){
+},{}],50:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -1486,9 +2026,9 @@ __exportStar(require("./UIElements"), exports);
 __exportStar(require("./UIDefinitions"), exports);
 __exportStar(require("./UIElementBuilders"), exports);
 
-},{"./Form":41,"./UIDefinitions":42,"./UIElementBuilders":43,"./UIElements":44}],46:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],47:[function(require,module,exports){
+},{"./Form":46,"./UIDefinitions":47,"./UIElementBuilders":48,"./UIElements":49}],51:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],52:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DefinedLanguages = void 0;
@@ -1504,19 +2044,19 @@ var DefinedLanguages;
     DefinedLanguages["PORTUGUESE"] = "pt_BR";
 })(DefinedLanguages || (exports.DefinedLanguages = DefinedLanguages = {}));
 
-},{}],48:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],49:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],50:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],51:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],52:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],53:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],54:[function(require,module,exports){
+},{}],53:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],54:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],55:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],56:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],57:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],58:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],59:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ContentType = exports.ReadingFlag = exports.ReadingMode = exports.PublicationStatus = void 0;
@@ -1557,13 +2097,13 @@ var ContentType;
     ContentType[ContentType["NOVEL"] = 4] = "NOVEL";
 })(ContentType || (exports.ContentType = ContentType = {}));
 
-},{}],55:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],56:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],57:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],58:[function(require,module,exports){
+},{}],60:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],61:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],62:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],63:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ProviderLinkType = void 0;
@@ -1575,9 +2115,9 @@ var ProviderLinkType;
     ProviderLinkType[ProviderLinkType["PATREON"] = 3] = "PATREON";
 })(ProviderLinkType || (exports.ProviderLinkType = ProviderLinkType = {}));
 
-},{}],59:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],60:[function(require,module,exports){
+},{}],64:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],65:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -1609,7 +2149,7 @@ __exportStar(require("./BooleanState"), exports);
 __exportStar(require("./ContentProgressState"), exports);
 __exportStar(require("./GroupedUpdatesResponse"), exports);
 
-},{"./BooleanState":46,"./Chapter":47,"./ChapterData":48,"./Collection":49,"./Content":50,"./ContentProgressState":51,"./ContextMenu":52,"./DeepLinkContext":53,"./Enums":54,"./GroupedUpdatesResponse":55,"./Highlight":56,"./Property":57,"./Provider":58,"./ReaderContext":59}],61:[function(require,module,exports){
+},{"./BooleanState":51,"./Chapter":52,"./ChapterData":53,"./Collection":54,"./Content":55,"./ContentProgressState":56,"./ContextMenu":57,"./DeepLinkContext":58,"./Enums":59,"./GroupedUpdatesResponse":60,"./Highlight":61,"./Property":62,"./Provider":63,"./ReaderContext":64}],66:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthMethod = void 0;
@@ -1621,11 +2161,11 @@ var AuthMethod;
     AuthMethod[AuthMethod["OAUTH"] = 3] = "OAUTH";
 })(AuthMethod || (exports.AuthMethod = AuthMethod = {}));
 
-},{}],62:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],63:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],64:[function(require,module,exports){
+},{}],67:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],68:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],69:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CatalogRating = void 0;
@@ -1648,7 +2188,7 @@ var CatalogRating;
     CatalogRating[CatalogRating["NSFW"] = 2] = "NSFW";
 })(CatalogRating || (exports.CatalogRating = CatalogRating = {}));
 
-},{}],65:[function(require,module,exports){
+},{}],70:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -1670,9 +2210,9 @@ __exportStar(require("./RunnerInfo"), exports);
 __exportStar(require("./PagedResult"), exports);
 __exportStar(require("./ContextProvider"), exports);
 
-},{"./Authentication":61,"./ContextProvider":62,"./PagedResult":63,"./RunnerInfo":64}],66:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],67:[function(require,module,exports){
+},{"./Authentication":66,"./ContextProvider":67,"./PagedResult":68,"./RunnerInfo":69}],71:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],72:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.FilterType = void 0;
@@ -1704,9 +2244,9 @@ var FilterType;
     FilterType[FilterType["INFO"] = 5] = "INFO";
 })(FilterType || (exports.FilterType = FilterType = {}));
 
-},{}],68:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],69:[function(require,module,exports){
+},{}],73:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],74:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -1727,7 +2267,7 @@ __exportStar(require("./DirectoryConfig"), exports);
 __exportStar(require("./DirectoryRequest"), exports);
 __exportStar(require("./DirectoryFilter"), exports);
 
-},{"./DirectoryConfig":66,"./DirectoryFilter":67,"./DirectoryRequest":68}],70:[function(require,module,exports){
+},{"./DirectoryConfig":71,"./DirectoryFilter":72,"./DirectoryRequest":73}],75:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -1755,7 +2295,7 @@ __exportStar(require("./page"), exports);
 const Generate = (v) => v;
 exports.Generate = Generate;
 
-},{"./UI":45,"./content":60,"./core":65,"./directory":69,"./networking":77,"./page":78,"./tracker":79}],71:[function(require,module,exports){
+},{"./UI":50,"./content":65,"./core":70,"./directory":74,"./networking":82,"./page":83,"./tracker":84}],76:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NetworkClientBuilder = void 0;
@@ -1877,11 +2417,11 @@ class NetworkClientBuilder {
 }
 exports.NetworkClientBuilder = NetworkClientBuilder;
 
-},{}],72:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],73:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],74:[function(require,module,exports){
+},{}],77:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],78:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],79:[function(require,module,exports){
 "use strict";
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -1899,11 +2439,11 @@ const name = (base, known) => __awaiter(void 0, void 0, void 0, function* () {
 });
 exports.name = name;
 
-},{}],75:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],76:[function(require,module,exports){
-arguments[4][17][0].apply(exports,arguments)
-},{"dup":17}],77:[function(require,module,exports){
+},{}],80:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],81:[function(require,module,exports){
+arguments[4][22][0].apply(exports,arguments)
+},{"dup":22}],82:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -1927,7 +2467,7 @@ __exportStar(require("./Response"), exports);
 __exportStar(require("./Transformer"), exports);
 __exportStar(require("./Error"), exports);
 
-},{"./Builder":71,"./Client":72,"./Error":73,"./Request":74,"./Response":75,"./Transformer":76}],78:[function(require,module,exports){
+},{"./Builder":76,"./Client":77,"./Error":78,"./Request":79,"./Response":80,"./Transformer":81}],83:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SectionStyle = void 0;
@@ -1943,7 +2483,7 @@ var SectionStyle;
     SectionStyle[SectionStyle["STANDARD_GRID"] = 7] = "STANDARD_GRID";
 })(SectionStyle || (exports.SectionStyle = SectionStyle = {}));
 
-},{}],79:[function(require,module,exports){
+},{}],84:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TrackStatus = void 0;
@@ -1957,5 +2497,5 @@ var TrackStatus;
     TrackStatus["REREADING"] = "REREADING";
 })(TrackStatus || (exports.TrackStatus = TrackStatus = {}));
 
-},{}]},{},[11])(11)
+},{}]},{},[15])(15)
 });
