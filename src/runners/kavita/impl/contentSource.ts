@@ -14,27 +14,25 @@ import {
   request,
   getApiKey,
 } from "../api"
-import { detailedSeriesToContent, KavitaChapterToChapter } from "../utils"
-import { ChapterDto } from "../types"
+import {
+  detailedSeriesToContent,
+  getChapterPages,
+  getKavitaChapters,
+  volumeToChapter,
+} from "../utils"
+import { ChapterDto, VolumeDto } from "../types"
 
 type OmittedKeys = "info" | "getDirectory" | "getDirectoryConfig"
 export const KavitaContentSource: Omit<ContentSource, OmittedKeys> = {
-  getContent: async function (contentId: string): Promise<Content> {
-    // * NOTE: `contentId` in our case will always refer to Series and not Books.
-    const series = await getSeries(contentId)
-    const seriesMetadata = await getSeriesMetadata(contentId)
-    const readingProfile = await getSeriesReadingProfile(contentId)
-    return detailedSeriesToContent(series, seriesMetadata, readingProfile)
+  getContent: async function (seriesId: string): Promise<Content> {
+    const series = await getSeries(seriesId)
+    const seriesMetadata = await getSeriesMetadata(seriesId)
+    const readingProfile = await getSeriesReadingProfile(seriesId)
+    const seriesChapters = await getSeriesChapters(seriesId)
+    return detailedSeriesToContent(series, seriesMetadata, seriesChapters, readingProfile)
   },
-  getChapters: async function (contentId: string): Promise<Chapter[]> {
-    const { chapters, volumes } = await getSeriesChapters(contentId)
-    const host = await getHost()
-    const apiKey = await getApiKey()
-    const items: Chapter[] = (chapters ?? []).map((chapter, index) =>
-      KavitaChapterToChapter(chapter, volumes ?? [], host, apiKey, index)
-    )
-
-    return items
+  getChapters: async function (seriesId: string): Promise<Chapter[]> {
+    return getKavitaChapters(seriesId)
   },
   getChapterData: async function (
     contentId: string,
@@ -50,13 +48,8 @@ export const KavitaContentSource: Omit<ContentSource, OmittedKeys> = {
       },
     })
 
-    const pages: ChapterPage[] = []
+    const pages = getChapterPages(chapter, host, apiKey)
 
-    for (let page = 1; page <= (chapter.pages ?? 0); page++) {
-      pages.push({
-        url: `${host}/api/Reader/image?chapterId=${chapterId}&page=${page}&apiKey=${apiKey}`,
-      })
-    }
     return {
       pages,
     }

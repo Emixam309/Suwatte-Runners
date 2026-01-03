@@ -1,25 +1,33 @@
-import { Chapter, Highlight } from "@suwatte/daisuke"
-import { request } from "."
 import {
-  BookInfoDto,
+  Chapter,
+  DirectoryRequest,
+  Highlight,
+  SortSelection,
+  Tag,
+} from "@suwatte/daisuke"
+import { request, cachedRequest } from "."
+import {
   LibraryDto,
   ChapterDto,
   SeriesDto,
   FilterV2Dto,
   UserReadingProfileDto,
-  SeriesDetailDto,
   DashboardStreamDto,
   RecentlyAddedItemDto,
+  SideNavStreamDto,
+  VolumeDto,
+  SeriesMetadataDto,
 } from "../types"
-import { getApiKey, getHost } from "./auth"
 import {
-  chapterToHighlight,
+  buildFilterStatements,
+  buildSort,
+  buildTagFilterStatement,
+  FilterInput,
   genURL,
-  KavitaChapterToChapter,
   recentlyAddedItemToSeries,
   RESULT_COUNT,
-  seriesToHighlight,
 } from "../utils"
+import { CACHE_TTL, generateCacheKey } from "../utils/cache"
 
 /**
  * Returns all libraries.
@@ -35,172 +43,127 @@ export const getLibraries = async () => {
  */
 export const getLibrarySeries = async (
   libraryId: string | null,
-  // sort: string,
-  // filters: FilterV2Dto,
-  page: number = 1
-  // search?: string
+  dirRequest: DirectoryRequest
 ) => {
+  const { sort, filters, page = 1, query, tag } = dirRequest
+  const filtersStatements = buildFilterStatements(filters)
   const librarySeries = await request<SeriesDto[]>({
     url: await genURL("/api/Series/v2"),
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
     body: {
-      statements: libraryId
-        ? [{ field: 19, value: libraryId.toString(), comparison: 0 }]
-        : [],
+      statements: tag?.propertyId
+        ? [buildTagFilterStatement(tag?.tagId, tag?.propertyId)]
+        : [
+            ...(libraryId
+              ? [
+                  {
+                    field: 19 as const,
+                    value: libraryId.toString(),
+                    comparison: 0 as const,
+                  },
+                ]
+              : []),
+            ...(query
+              ? [{ field: 1 as const, value: query, comparison: 7 as const }]
+              : []),
+            ...filtersStatements,
+          ],
       combination: 1,
-      sortOptions: { isAscending: true, sortField: 1 },
+      sortOptions: sort ? buildSort(sort) : { isAscending: true, sortField: 1 },
     } satisfies FilterV2Dto,
     params: {
-      PageNumber: page - 1,
-      PageSize: RESULT_COUNT,
+      pageNumber: page,
+      pageSize: RESULT_COUNT,
     },
   })
 
   return librarySeries
 }
 
-/**
- * Get Books on deck
- */
-// export const getBooksOnDeck = async (libraryId: string | null) => {
-//   const { content: data } = await request<PageBookDto>({
-//     url: await genURL("/api/Series/on-deck"),
-//     params: {
-//       ...(libraryId && { libraryId }),
-//     },
-//   })
-//   const host = await getHost()
-//   const highlights: Highlight[] = (data ?? []).map((book) =>
-//     seriesToHighlight(book, host)
-//   )
+export interface SeriesChaptersResult {
+  chaptersVolume?: VolumeDto
+  volumes: VolumeDto[]
+  specialsVolume?: VolumeDto
+  allVolumes: VolumeDto[]
+}
 
-//   return highlights
-// }
-
-/**
- * Gets all series within a library
- */
-// export const getSeriesForLibraryWithState = async (
-//   library_id: string | null,
-//   state: string
-// ) => {
-//   const body = {
-//     url: await genURL(`/api/v1/series/${state}`),
-//     params: {
-//       ...(library_id && { library_id }),
-//     },
-//   }
-//   const { content: data } = await request<PageSeriesDto>(body)
-
-//   return data ?? []
-// }
-
-// export const getSeriesForLibrary = async (
-//   library_id: string | null,
-//   sort: string,
-//   filters: FilterItems,
-//   page: number,
-//   search?: string
-// ) => {
-//   const config = {
-//     url: await genURL(`/api/v1/series`),
-//     params: {
-//       ...(library_id && { library_id }),
-//       sort,
-//       ...filters,
-//       page: page - 1,
-//       size: RESULT_COUNT,
-//       search,
-//     },
-//   }
-
-//   const { content: data } = await request<PageSeriesDto>(config)
-
-//   return data ?? []
-// }
-
-/**
- * Get books within a series
- */
-// export const getBooksForSeries = async (
-//   series: string,
-//   sort: string,
-//   filters: FilterItems,
-//   page: number
-// ) => {
-//   const { content: data, last } = await request<PageBookDto>({
-//     url: await genURL(`/api/v1/series/${series}/books`),
-//     params: {
-//       page: page - 1,
-//       size: RESULT_COUNT,
-//       sort,
-//       ...filters,
-//     },
-//   })
-//   const host = await getHost()
-
-//   const items: Highlight[] = (data ?? []).map((book) =>
-//     seriesToHighlight(book, host)
-//   )
-
-//   return {
-//     isLastPage: last ?? true,
-//     items,
-//   }
-// }
-
-export const getSeriesChapters = async (series: string) => {
-  const seriesDetail = await request<SeriesDetailDto>({
-    url: await genURL(`/api/Series/series-detail`),
-    params: {
-      seriesId: series,
+export const getSeriesChapters = async (
+  series: string,
+  skipCache: boolean = false
+): Promise<SeriesChaptersResult> => {
+  const allVolumes = await cachedRequest<VolumeDto[]>(
+    {
+      url: await genURL(`/api/Series/volumes`),
+      params: {
+        seriesId: series,
+      },
     },
-  })
+    {
+      cacheKey: generateCacheKey("series_chapters", series),
+      ttl: CACHE_TTL.SERIES_DETAILS,
+      skipCache,
+    }
+  )
 
-  const chapters = [
-    ...(seriesDetail.chapters ?? []),
-    ...(seriesDetail.specials ?? []),
-  ].reverse()
+  const volumes = allVolumes.filter(
+    (v) =>
+      v.minNumber !== -100000 &&
+      v.minNumber !== 100000 &&
+      v.chapters &&
+      v.chapters.length > 0
+  )
+  const chaptersVolume = allVolumes.find((v) => v.minNumber <= -100000)
+  const specialsVolume = allVolumes.find((v) => v.minNumber >= 100000)
 
-  return { chapters, volumes: seriesDetail.volumes }
+  return { chaptersVolume, volumes, specialsVolume, allVolumes }
 }
 
 export const getSeries = async (id: string) => {
-  return request<SeriesDto>({
-    url: await genURL(`/api/Series/${id}`),
-  })
+  return cachedRequest<SeriesDto>(
+    {
+      url: await genURL(`/api/Series/${id}`),
+    },
+    {
+      cacheKey: generateCacheKey("series", id),
+      ttl: CACHE_TTL.SERIES_DETAILS,
+    }
+  )
 }
 
 export const getSeriesReadingProfile = async (id: string) => {
-  return request<UserReadingProfileDto>({
-    url: await genURL(`/api/reading-profile/${id}`),
-  })
+  return cachedRequest<UserReadingProfileDto>(
+    {
+      url: await genURL(`/api/reading-profile/${id}`),
+    },
+    {
+      cacheKey: generateCacheKey("reading_profile", id),
+      ttl: CACHE_TTL.READING_PROFILE,
+    }
+  )
 }
 export const getSeriesMetadata = async (id: string) => {
-  return request<SeriesDto>({
-    url: await genURL(`/api/Series/metadata`),
-    params: {
-      seriesId: id,
+  return cachedRequest<SeriesMetadataDto>(
+    {
+      url: await genURL(`/api/Series/metadata`),
+      params: {
+        seriesId: id,
+      },
     },
-  })
+    {
+      cacheKey: generateCacheKey("series_metadata", id),
+      ttl: CACHE_TTL.SERIES_METADATA,
+    }
+  )
 }
 
-// export const getBooks = async (
-//   series: string,
-//   size: number,
-//   sort: string = buildSort(Sort.Number, false)
-// ) => {
-//   const { content: data } = await request<PageBookDto>({
-//     url: await genURL(`/api/v1/series/${series}/books`),
-//     params: {
-//       page: 0,
-//       size,
-//       sort,
-//     },
-//   })
-
-//   return data ?? []
-// }
+export const getSideNavInfo = async () => {
+  return request<SideNavStreamDto[]>({
+    url: await genURL("/api/Stream/sidenav"),
+  })
+}
 
 export const getDashboardInfo = async () => {
   return request<DashboardStreamDto[]>({
@@ -218,12 +181,14 @@ export const getOnDeckSeries = async (libraryId?: string | null) => {
   })
 }
 
-export const getRecentlyUpdatedSeries = async (libraryId?: string | null) => {
+export const getRecentlyUpdatedSeries = async () => {
   const items = await request<RecentlyAddedItemDto[]>({
     url: await genURL("/api/series/recently-updated-series"),
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
     params: {
-      ...(libraryId && { libraryId }),
       pageSize: RESULT_COUNT,
       pageNumber: 0,
     },
@@ -235,7 +200,7 @@ export const getRecentlyUpdatedSeries = async (libraryId?: string | null) => {
   return series
 }
 
-export const getRecentlyAddedSeries = async (libraryId?: string | null) => {
+export const getRecentlyAddedSeries = async () => {
   return request<SeriesDto[]>({
     url: await genURL("/api/series/recently-added-v2"),
     method: "POST",
@@ -244,7 +209,6 @@ export const getRecentlyAddedSeries = async (libraryId?: string | null) => {
     },
     body: {},
     params: {
-      ...(libraryId && { libraryId }),
       pageSize: RESULT_COUNT,
       pageNumber: 0,
     },
@@ -253,6 +217,24 @@ export const getRecentlyAddedSeries = async (libraryId?: string | null) => {
 
 export const getRecommendationGenre = async (genre: string) => {
   return request<SeriesDto[]>({
-    url: await genURL(`/api/recommended/more-in`),
+    url: await genURL(`/api/Recommended/more-in`),
+  })
+}
+
+export const getSeriesContinuePoint = async (seriesId: string) => {
+  const hasProgress = await request<boolean>({
+    url: await genURL(`/api/Reader/has-progress`),
+    params: {
+      seriesId: seriesId,
+    },
+  })
+  if (!hasProgress) {
+    return null
+  }
+  return request<ChapterDto>({
+    url: await genURL(`/api/Reader/continue-point`),
+    params: {
+      seriesId: seriesId,
+    },
   })
 }

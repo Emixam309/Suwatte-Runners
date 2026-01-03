@@ -2832,7 +2832,7 @@ export interface SeriesDetailPlusDto {
 
 export interface SeriesDto {
   /** @format int32 */
-  id?: number;
+  id: number;
   name: string | null;
   originalName?: string | null;
   localizedName?: string | null;
@@ -4137,11 +4137,11 @@ export interface UserTokenInfo {
 
 export interface VolumeDto {
   /** @format int32 */
-  id?: number;
+  id: number;
   /** @format float */
-  minNumber?: number;
+  minNumber: number;
   /** @format float */
-  maxNumber?: number;
+  maxNumber: number;
   name?: string | null;
   /**
    * This will map to MinNumber. Number was removed in v0.7.13.8/v0.7.14

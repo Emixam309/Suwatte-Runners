@@ -32,6 +32,7 @@ export const KavitaSetupProvider: RunnerSetupProvider = {
               id: "apiKey",
               title: "API Key",
               value: (await KavitaStore.apiKey()) ?? "",
+              secure: true,
             }),
           ],
         }
@@ -44,7 +45,7 @@ export const KavitaSetupProvider: RunnerSetupProvider = {
   }: SetupForm): Promise<void> {
     if (!host.endsWith("/")) host += "/";
     await ObjectStore.set("host", host);
-    await ObjectStore.set("apiKey", apiKey);
+    await SecureStore.set("apiKey", apiKey);
     try {
       await healthCheck();
     } catch (error) {

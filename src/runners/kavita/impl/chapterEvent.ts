@@ -8,18 +8,16 @@ export const KavitaChapterEvent: ChapterEventHandler = {
     chapterIds: string[],
     completed: boolean
   ): Promise<void> {
-    const promises = chapterIds.map((chapterId) => markAsRead(Number(seriesId), Number(chapterId), completed))
-    const state = await Promise.allSettled(promises)
-
-    const failing = state.filter((v) => v.status === "rejected").length
-
-    if (failing) {
-      console.error(`Failed to mark ${failing} Books`)
+    const chapterIdsNum = chapterIds.map((id) => Number(id))
+    try {
+      await markAsRead(Number(seriesId), chapterIdsNum, completed)
+    } catch (error) {
+      console.error(`Failed to mark ${chapterIds?.length ?? 0} chapters`)
     }
   },
 
   onChapterRead: async function (seriesId: string, chapterId: string): Promise<void> {
-    return markAsRead(Number(seriesId), Number(chapterId))
+    return markAsRead(Number(seriesId), [Number(chapterId)], true)
   },
 
   async onPageRead(seriesId, chapterId, page) {
@@ -38,17 +36,34 @@ export const KavitaChapterEvent: ChapterEventHandler = {
   },
 }
 
-const markAsRead = async (seriesId:number , chapterId: number, completed = true) => {
-  await request<any>({
-    url: await genURL(`/api/Reader/progress`),
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: {
-      seriesId: seriesId,
-      chapterId: chapterId,
-      pageNum: completed ? Infinity : -1,
-    },
-  })
+const markAsRead = async (
+  seriesId: number,
+  chapterIds: number[],
+  completed = true
+) => {
+  if (completed) {
+    await request<any>({
+      url: await genURL(`/api/Reader/mark-multiple-read`),
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: {
+        seriesId,
+        chapterIds,
+      },
+    })
+  } else {
+    await request<any>({
+      url: await genURL(`/api/Reader/mark-multiple-unread`),
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: {
+        seriesId,
+        chapterIds,
+      },
+    })
+  }
 }

@@ -3,52 +3,137 @@ import {
   ChapterData,
   ChapterPage,
   Content,
+  ContentType,
   DefinedLanguages,
   Highlight,
   Property,
   Provider,
   PublicationStatus,
   ReadingMode,
+  SortSelection,
 } from "@suwatte/daisuke"
-import { getApiKey, getHost, getSeries } from "../api"
+import {
+  getApiKey,
+  getHost,
+  getSeries,
+  getSeriesChapters,
+  getSeriesContinuePoint,
+  getSeriesMetadata,
+  SeriesChaptersResult,
+} from "../api"
 import {
   ChapterDto,
+  FilterStatementDto,
+  GenreTagDto,
   RecentlyAddedItemDto,
   SeriesDto,
   SeriesMetadataDto,
+  SortOptions,
   UserReadingProfileDto,
   VolumeDto,
 } from "../types"
-import { Sort } from "./constants"
+import {
+  AgeRating,
+  creatorFields,
+  FilterField,
+  FilterInput,
+  genreMap,
+  getAgeRatingTitle,
+  metadataFields,
+  Sort,
+} from "./constants"
+import { KavitaStore } from "../store"
 // import { BookDto, SeriesDto } from "../types";
 // import { Sort } from "./constants";
 
-export const convertSort = (val: string | undefined): Sort | undefined => {
-  switch (val) {
-    case "nameSort":
-      return Sort.Name
-    case "created":
-      return Sort.DateAdded
-    case "lastModifiedDate":
-      return Sort.DateUpdated
-    case "booksMetadata.releaseDate":
-      return Sort.ReleaseDate
-    case "booksCount":
-      return Sort.BooksCount
-    case "readProgress.readDate":
-      return Sort.ReadDate
-    case "metadata.numberSort":
-      return Sort.Number
-    default:
-      return undefined
+export const buildSort = (sort: SortSelection): SortOptions => {
+  return {
+    sortField: parseInt(sort.id) as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9,
+    isAscending: sort.ascending ? true : false,
   }
 }
 
-/**
- * builds the sort query param using the key and its order
- */
-export const buildSort = (key: Sort, asc: boolean | undefined) =>
-  `${key},${asc ? "asc" : "desc"}`
+export const buildFilterStatements = (
+  filters: FilterInput
+): FilterStatementDto[] => {
+  const statements: FilterStatementDto[] = []
+
+  // Process tags
+  if (filters?.tags) {
+    filters.tags.included.forEach((value) => {
+      statements.push({
+        field: FilterField.Tags,
+        value,
+        comparison: 0, // included
+      })
+    })
+    filters.tags.excluded.forEach((value) => {
+      statements.push({
+        field: FilterField.Tags,
+        value,
+        comparison: 9, // excluded
+      })
+    })
+  }
+
+  // Process genres
+  if (filters?.genres) {
+    filters.genres.included.forEach((value) => {
+      statements.push({
+        field: FilterField.Genres,
+        value,
+        comparison: 0, // included
+      })
+    })
+    filters?.genres.excluded.forEach((value) => {
+      statements.push({
+        field: FilterField.Genres,
+        value,
+        comparison: 9, // excluded
+      })
+    })
+  }
+
+  // Process languages
+  if (filters?.languages && filters.languages.length > 0) {
+    filters.languages.forEach((value) => {
+      statements.push({
+        field: FilterField.Languages,
+        value,
+        comparison: 0, // included
+      })
+    })
+  }
+
+  // Process peoples
+  if (filters?.peoples) {
+    const peopleArray = Array.isArray(filters.peoples)
+      ? filters.peoples
+      : [filters.peoples]
+    peopleArray.forEach((value) => {
+      statements.push({
+        field: FilterField.Writers,
+        value,
+        comparison: 0, // included
+      })
+    })
+  }
+
+  return statements
+}
+
+export const buildTagFilterStatement = (
+  tagId: string,
+  propertyId: string
+): FilterStatementDto => {
+  const metadataField = metadataFields.find((field) => field.key === propertyId)
+
+  return {
+    field: metadataField?.field ?? FilterField.Tags,
+    value: tagId,
+    comparison: 0,
+  }
+}
 
 /**
  * Generates a url using the user specified host
@@ -57,41 +142,68 @@ export const genURL = async (url: string) => {
   return `${await getHost()}${url}`
 }
 
-export const seriesToHighlight = (
+const getSeriesSubtitle = (
+  volumes: VolumeDto[],
+  chapters: ChapterDto[]
+): string => {
+  const volumeCount = volumes.length
+  const chapterCount = chapters?.length ?? 0
+
+  const subtitleParts: string[] = []
+  if (volumeCount > 0) {
+    subtitleParts.push(`${volumeCount} Volume${volumeCount !== 1 ? "s" : ""}`)
+  }
+  if (chapterCount > 0) {
+    subtitleParts.push(
+      `${chapterCount} Chapter${chapterCount !== 1 ? "s" : ""}`
+    )
+  }
+  return subtitleParts.join(" • ")
+}
+
+const getUnreadChapterCount = (chapters: ChapterDto[]) => {
+  const unreadCount = chapters.filter(
+    (chapter) => (chapter.pagesRead ?? 0) < (chapter.pages ?? 0)
+  ).length
+  const readCount = chapters.length - unreadCount
+  return { unreadCount, readCount }
+}
+
+export const seriesToHighlight = async (
   series: SeriesDto,
-  // seriesMetadata: SeriesMetadataDto,
   host: string,
   apiKey: string,
-  asRequest: boolean
-): Highlight => {
-  const cover = `${host}/api/image/series-cover?seriesId=${series.id}&apiKey=${apiKey}`
-  // const subtitle = `${seriesMetadata.totalCount} Chapter${
-  //   seriesMetadata.totalCount != 1 ? "s" : ""
-  // }`
+  asChapter: boolean = false
+): Promise<Highlight> => {
+  const { volumes, allVolumes } = await getSeriesChapters(series.id?.toString())
+  const allChapters = allVolumes.flatMap((v) => v.chapters || [])
+
+  const cover = await getCurrentVolumeSeriesCover(series, volumes, host, apiKey)
+
   const title =
     series.name ?? series.originalName ?? series.localizedName ?? "Untitled"
+  let subtitle = ""
+  if (asChapter) {
+    const continuePointChapter = await getSeriesContinuePoint(
+      series.id?.toString()
+    )
+    subtitle = continuePointChapter?.titleName ?? ""
+  } else {
+    subtitle = getSeriesSubtitle(volumes, allChapters)
+  }
+  const { unreadCount, readCount } = getUnreadChapterCount(allChapters)
   return {
-    id: series.id?.toString() ?? "",
+    id: series.id?.toString(),
     title: title,
-    // subtitle,
+    subtitle: subtitle,
     cover,
-    // ...(series.totalReads && series.totalReads > 0 && seriesMetadata.totalCount !== undefined && {
-    //   badge: {
-    //     color: "#0096FF",
-    //     count: seriesMetadata.totalCount - (series.totalReads ?? 0),
-    //   },
-    // }),
-    ...(asRequest && {
-      link: {
-        request: {
-          configID: "series",
-          page: 1,
-          context: {
-            seriesId: series.id,
-          },
+    ...(readCount > 0 &&
+      unreadCount > 0 && {
+        badge: {
+          color: "#4ac694",
+          count: unreadCount,
         },
-      },
-    }),
+      }),
   }
 }
 
@@ -116,34 +228,127 @@ export const chapterToHighlight = (
   }
 }
 
-// export const seriesToContinueChapter = async (
-//   series: SeriesDto,
-//   host: string
-// ): Promise<ChapterDto> => {}
-
-export const KavitaChapterToChapter = (
-  chapter: ChapterDto,
+const getCurrentVolumeSeriesCover = async (
+  series: SeriesDto,
   volumes: VolumeDto[],
   host: string,
   apiKey: string,
-  index: number
-): Chapter => {
+  continuePoint?: ChapterDto
+) => {
+  let cover = `${host}/api/Image/series-cover?seriesId=${series.id}&apiKey=${apiKey}`
+  const continuePointCover = await KavitaStore.continuePointCover()
+  if (!continuePointCover) return cover
+  const continuePointChapter =
+    continuePoint ?? (await getSeriesContinuePoint(series.id?.toString() ?? ""))
+  if (!continuePointChapter) return cover
+  const isChapterAlreadyRead =
+    continuePointChapter.pagesRead >= continuePointChapter.pages
+  const allChapters = volumes.flatMap((v) => v.chapters || [])
+  if (isChapterAlreadyRead && checkAllChaptersRead(allChapters)) {
+    const seriesMetadata = await getSeriesMetadata(series.id?.toString() ?? "")
+    if (seriesMetadata?.publicationStatus === PublicationStatus.COMPLETED) {
+      return cover
+    }
+    const lastVolume = volumes[volumes.length - 1]
+    cover = lastVolume?.id
+      ? `${host}/api/Image/volume-cover?volumeId=${lastVolume.id}&apiKey=${apiKey}`
+      : cover
+  } else {
+    const volumeId = continuePointChapter?.volumeId
+    const volume =
+      volumes.find((v) => v.id === volumeId) ?? volumes[volumes.length - 1]
+    cover = volume?.id
+      ? `${host}/api/Image/volume-cover?volumeId=${volume?.id}&apiKey=${apiKey}`
+      : cover
+  }
+
+  return cover
+}
+
+const checkAllChaptersRead = (chapters: ChapterDto[]) => {
+  return chapters.every(
+    (chapter) => (chapter.pagesRead ?? 0) >= (chapter.pages ?? 0)
+  )
+}
+
+export const getKavitaChapters = async (
+  seriesId: string,
+  volumesList?: SeriesChaptersResult
+): Promise<Chapter[]> => {
+  const { chaptersVolume, volumes, specialsVolume } =
+    volumesList ?? (await getSeriesChapters(seriesId, true))
+  const chapters = [
+    ...volumes.flatMap((v) => v.chapters || []),
+    ...(chaptersVolume?.chapters || []),
+    ...(specialsVolume?.chapters || []),
+  ].reverse()
+  const host = await getHost()
+  const apiKey = await getApiKey()
+  return chapters.map((chapter, index) => {
+    const pages = getChapterPages(chapter, host, apiKey)
+    const volume = volumes.find((v) => v.id === chapter.volumeId)
+
+    return {
+      chapterId: chapter.id?.toString(),
+      title:
+        chapter.titleName ||
+        (chapter.minNumber !== chapter.maxNumber ? chapter.title : undefined) ||
+        undefined,
+      date: chapter.releaseDate
+        ? new Date(chapter.releaseDate)
+        : chapter.created
+        ? new Date(chapter.created)
+        : new Date(),
+      number:
+        chapter.sortOrder === -100000
+          ? volume?.minNumber ?? 0
+          : chapter.sortOrder ?? 0,
+      volume: volume ? volume.minNumber : undefined,
+      index,
+      webUrl: chapter.webLinks?.[0],
+      thumbnail: `${host}/api/Image/chapter-cover?chapterId=${chapter.id}&apiKey=${apiKey}`,
+      language: convertLanguage(chapter.language),
+      data: {
+        pages,
+      },
+    }
+  })
+}
+
+export const getChapterPages = (
+  chapter: ChapterDto,
+  host: string,
+  apiKey: string
+): ChapterPage[] => {
   const pages: ChapterPage[] = []
-  for (let page = 1; page <= (chapter.pages ?? 0); page++) {
+  for (let page = 0; page < (chapter.pages ?? 0); page++) {
     pages.push({
       url: `${host}/api/Reader/image?chapterId=${chapter.id}&page=${page}&apiKey=${apiKey}`,
     })
   }
-  const volume = volumes.find((v) => v.id === chapter.volumeId)
+  return pages
+}
+
+export const volumeToChapter = (
+  volume: VolumeDto,
+  host: string,
+  apiKey: string,
+  index: number
+): Chapter => {
+  const chapter = volume.chapters![0]
+  const pages = getChapterPages(chapter, host, apiKey)
+
   return {
-    chapterId: chapter.id?.toString(),
-    title: chapter.titleName ?? undefined,
-    date: chapter.created ? new Date(chapter.created) : new Date(1970, 0, 1),
-    number: chapter.sortOrder ?? 0,
-    volume: volume ? volume.minNumber : undefined,
+    chapterId: chapter.id?.toString() ?? "",
+    date: chapter.releaseDate
+      ? new Date(chapter.releaseDate)
+      : volume.created
+      ? new Date(volume.created)
+      : new Date(),
+    number: volume.minNumber ?? 0,
+    volume: volume.minNumber,
     index,
-    webUrl: chapter.webLinks?.[0],
-    thumbnail: `${host}/api/Image/chapter-cover?chapterId=${chapter.id}&apiKey=${apiKey}`,
+    thumbnail: `${host}/api/Image/volume-cover?volumeId=${volume.id}&apiKey=${apiKey}`,
     language: convertLanguage(chapter.language),
     data: {
       pages,
@@ -154,32 +359,43 @@ export const KavitaChapterToChapter = (
 export const detailedSeriesToContent = async (
   series: SeriesDto,
   seriesMetadata: SeriesMetadataDto,
+  seriesChapters: SeriesChaptersResult,
   readingProfile: UserReadingProfileDto
 ): Promise<Content> => {
   const host = await getHost()
   const apiKey = await getApiKey()
-  const cover = `${host}/api/Image/series-cover?seriesId=${series.id}&apiKey=${apiKey}`
+  const cover = await getCurrentVolumeSeriesCover(
+    series,
+    seriesChapters.volumes,
+    host,
+    apiKey
+  )
 
   const info: string[] = []
-  if (series.pagesRead == series.pages) {
-    info.push("Finished Reading")
-  } else if (series.pagesRead == 0) {
-    info.push("Not Started")
-  } else if (series.pagesRead != 0) {
-    info.push("Started Reading")
+  if (seriesMetadata.language) {
+    const lang = new Intl.DisplayNames([], { type: "language" })
+    info.push(lang.of(seriesMetadata.language) ?? "")
   }
+
+  if (
+    seriesMetadata.ageRating !== undefined &&
+    seriesMetadata.ageRating !== AgeRating.Unknown
+  )
+    info.push(getAgeRatingTitle(seriesMetadata.ageRating))
+
+  if (seriesMetadata.releaseYear)
+    info.push(seriesMetadata.releaseYear?.toString())
+  info.push(`${series.pages ?? 0} Page${series.pages === 1 ? "" : "s"}`)
 
   const properties: Property[] = []
 
   const creators: string[] = []
-  
-  const creatorFields = ['writers', 'coverArtists', 'pencillers', 'inkers', 'colorists', 'letterers', 'editors']
-  
+
   creatorFields.forEach((field) => {
     const data = seriesMetadata[field as keyof SeriesMetadataDto] as any[]
     if (data && data.length > 0) {
       data.forEach((item) => {
-        const name = item.name ?? ''
+        const name = item.name ?? ""
         if (name && !creators.includes(name)) {
           creators.push(name)
         }
@@ -187,32 +403,16 @@ export const detailedSeriesToContent = async (
     }
   })
 
-  const metadataFields = [
-    { key: 'genres', title: 'Genres', prop: 'title' },
-    { key: 'writers', title: 'Writers', prop: 'name' },
-    { key: 'coverArtists', title: 'Cover Artists', prop: 'name' },
-    { key: 'publishers', title: 'Publishers', prop: 'name' },
-    { key: 'characters', title: 'Characters', prop: 'name' },
-    { key: 'pencillers', title: 'Pencillers', prop: 'name' },
-    { key: 'inkers', title: 'Inkers', prop: 'name' },
-    { key: 'imprints', title: 'Imprints', prop: 'name' },
-    { key: 'colorists', title: 'Colorists', prop: 'name' },
-    { key: 'letterers', title: 'Letterers', prop: 'name' },
-    { key: 'editors', title: 'Editors', prop: 'name' },
-    { key: 'translators', title: 'Translators', prop: 'name' },
-    { key: 'teams', title: 'Teams', prop: 'name' },
-    { key: 'locations', title: 'Locations', prop: 'name' },
-  ] as const
-
   metadataFields.forEach(({ key, title, prop }) => {
     const data = seriesMetadata[key as keyof SeriesMetadataDto] as any[]
     if (data && data.length > 0) {
       properties.push({
-        id: key.replace(/([A-Z])/g, '-$1').toLowerCase(),
+        id: key.replace(/([A-Z])/g, "-$1").toLowerCase(),
         title,
         tags: data.map((tag) => ({
-          id: tag.id?.toString() ?? '',
-          title: tag[prop] ?? '',
+          id: tag.id?.toString() ?? "",
+          title: tag[prop] ?? "",
+          nsfw: [12, 13, 14].includes(seriesMetadata.ageRating ?? 0),
         })),
       })
     }
@@ -232,14 +432,6 @@ export const detailedSeriesToContent = async (
           id: tag.id?.toString() ?? "",
           title: child.trim(),
         })
-      } else {
-        if (!groupedTags["tags"]) {
-          groupedTags["tags"] = []
-        }
-        groupedTags["tags"].push({
-          id: tag.id?.toString() ?? "",
-          title: tagTitle,
-        })
       }
     })
 
@@ -251,17 +443,46 @@ export const detailedSeriesToContent = async (
       })
     })
   }
+  const additionalTitles: string[] = []
+  if (series.localizedName && series.localizedName !== series.name) {
+    additionalTitles.push(series.localizedName)
+  }
+  if (series.originalName && series.originalName !== series.name) {
+    additionalTitles.push(series.originalName)
+  }
+
+  const chapters = await getKavitaChapters(
+    series.id?.toString(),
+    seriesChapters
+  )
+
   return {
     title: series.name ?? "Untitled",
-    additionalTitles: [series.localizedName ?? ""],
+    additionalTitles,
     summary: seriesMetadata?.summary || undefined,
     cover,
     creators,
+    contentType:
+      (series?.libraryName ? genreMap[series.libraryName] : undefined) ??
+      getContentTypeFromGenre(seriesMetadata.genres ?? []),
     status: convertStatus(seriesMetadata.publicationStatus),
     info,
     properties,
     recommendedPanelMode: convertReadingMode(readingProfile),
+    chapters,
   }
+}
+
+export const getContentTypeFromGenre = (
+  genres: GenreTagDto[]
+): ContentType | undefined => {
+  for (const genre of genres) {
+    const contentType = genreMap[genre.title ?? ""]
+    if (contentType) {
+      return contentType
+    }
+  }
+  return undefined
 }
 
 export const recentlyAddedItemToSeries = async (
@@ -290,10 +511,8 @@ const convertReadingMode = (readingProfile: UserReadingProfileDto) => {
   if (readingProfile.readerMode === 0) {
     switch (readingProfile.readingDirection) {
       case 0:
-        console.log("Returning Paged Comic")
         return ReadingMode.PAGED_COMIC
       case 1:
-        console.log("Returning Paged Manga")
         return ReadingMode.PAGED_MANGA
     }
   }

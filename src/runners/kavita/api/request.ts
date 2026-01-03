@@ -1,5 +1,7 @@
 import { NetworkRequest, NetworkResponse } from "@suwatte/daisuke"
 import { getHost, getJwt } from "./auth"
+import { getCachedData, setCachedData } from "../utils/cache"
+import { skip } from "node:test"
 
 export async function request<T>(req: NetworkRequest) {
   const host = await getHost()
@@ -10,6 +12,7 @@ export async function request<T>(req: NetworkRequest) {
 
   const client = new NetworkClient()
 
+  console.log("Request to:", req.url, req.body, req.params)
   const { data } = await client.request({
     ...req,
     headers: {
@@ -39,4 +42,47 @@ export async function simpleReq<T>(req: NetworkRequest) {
   } catch {
     return data as T
   }
+}
+
+/**
+ * Cached request wrapper
+ * Makes a network request with optional caching support
+ * @param req The network request configuration
+ * @param options Cache options
+ * @param options.cacheKey Optional key to use for caching the response
+ * @param options.ttl Time to live in milliseconds (required if cacheKey is provided)
+ * @param options.skipCache If true, bypasses cache and always makes a fresh request
+ * @returns The response data of type T
+ */
+export async function cachedRequest<T>(
+  req: NetworkRequest,
+  options?: {
+    cacheKey?: string
+    ttl?: number
+    skipCache?: boolean
+  }
+): Promise<T> {
+  const { cacheKey, ttl, skipCache = false } = options || {}
+
+  if (skipCache) {
+    if (!cacheKey) {
+      return request<T>(req)
+    }
+
+    // Check cache first
+    const cachedData = await getCachedData<T>(cacheKey)
+    if (cachedData !== null) {
+      return cachedData
+    }
+  }
+
+  // Cache miss or expired, make the request
+  const data = await request<T>(req)
+
+  // Store in cache if TTL is provided
+  if (cacheKey && ttl !== undefined) {
+    await setCachedData(cacheKey, data, ttl)
+  }
+
+  return data
 }

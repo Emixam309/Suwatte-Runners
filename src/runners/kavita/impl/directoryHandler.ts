@@ -1,23 +1,22 @@
 import {
   DirectoryConfig,
+  DirectoryFilter,
   DirectoryHandler,
   DirectoryRequest,
+  FilterType,
   Highlight,
   PagedResult,
 } from "@suwatte/daisuke"
 import {
   RESULT_COUNT,
-  FilterItems,
-  FilterOptions,
   SortOptions,
   buildSort,
   seriesToHighlight,
   chapterToHighlight,
   Sort,
-  convertSort,
 } from "../utils"
-import { getApiKey, getHost, getLibrarySeries, getSeriesChapters } from "../api"
-import { KavitaStore } from "../store"
+import { getApiKey, getHost, getLibrarySeries } from "../api"
+import { getGenres, getLanguages, getPeoples, getTags } from "../api/metadata"
 
 /**
  * Implementation of the DirectoryHandler Methods
@@ -27,30 +26,27 @@ export const KavitaDirectoryHandler: DirectoryHandler = {
     return fetchDirectory(request)
   },
   getDirectoryConfig: async function (
-    _: string | undefined
+    configId: string | undefined
   ): Promise<DirectoryConfig> {
-    return buildDirectoryConfig()
+    const filterOptions = await fetchFilterOptions(configId)
+
+    return {
+      searchable: true,
+      filters: filterOptions,
+
+      sort: {
+        options: SortOptions,
+        canChangeOrder: true,
+        default: {
+          id: Sort.SortName.toString(),
+          ascending: true,
+        },
+      },
+    }
   },
 }
 
-/**
- * Builds the Directory View Sort Options & Filters
- */
-function buildDirectoryConfig(): DirectoryConfig {
-  return {
-    searchable: true,
-    filters: FilterOptions,
-    sort: {
-      options: SortOptions,
-      canChangeOrder: true,
-    },
-  }
-}
-
-type IResponse = Promise<PagedResult>
-async function fetchDirectory(request: DirectoryRequest): IResponse {
-  const filters: FilterItems = request.filters ?? {}
-  const seriesId = request.context?.seriesId
+async function fetchDirectory(request: DirectoryRequest): Promise<PagedResult> {
   const libraryId = request.context?.libraryId
 
   const host = await getHost()
@@ -58,68 +54,65 @@ async function fetchDirectory(request: DirectoryRequest): IResponse {
   if (!host) {
     throw new Error("Host not defined")
   }
-  const asTitle = await KavitaStore.openSeriesAsTitle()
-
-  if (seriesId) {
-    const sort = convertSort(request.sort?.id) ?? Sort.Number
-    const chapters = (
-      await getSeriesChapters(
-        seriesId
-        // buildSort(sort, request.sort?.ascending),
-        // filters,
-        // request.page
-      )
-    ).chapters.map((chapter) => chapterToHighlight(chapter, host, apiKey))
-
-    return {
-      results: chapters,
-      isLastPage: chapters.length < RESULT_COUNT,
-    }
-  } else if (libraryId) {
-    const sort = convertSort(request.sort?.id) ?? Sort.DateUpdated
-    const results = (
+  const results = await Promise.all(
+    (
       await getLibrarySeries(
         libraryId,
-        // buildSort(sort, request.sort?.ascending),
-        // filters,
-        request.page,
-        // request.query
+        request
       )
-    ).map((v) => seriesToHighlight(v, host, apiKey, !(asTitle ?? false)))
-    return {
-      results,
-      isLastPage: results.length < RESULT_COUNT,
-    }
-  }
-
-  const isSeriesDirectory = request.context?.isSeriesDirectory ?? false
-  if (isSeriesDirectory) {
-    const sort = convertSort(request.sort?.id) ?? Sort.DateUpdated
-    const results = (
-      await getLibrarySeries(
-        libraryId,
-        // buildSort(sort, request.sort?.ascending),
-        // filters,
-        request.page,
-        // request.query
-      )
-    ).map((v) => seriesToHighlight(v, host, apiKey, !(asTitle ?? false)))
-    return {
-      results,
-      isLastPage: results.length < RESULT_COUNT,
-    }
-  }
-  // } else {
-  //   const sort = convertSort(request.sort?.id) ?? Sort.DateAdded;
-  //   const results = (
-  //     await getSeriesChapters(
-  //       series:
-  //     )
-  //     )
-  //   ).map((v) => chapterToHighlight(v, host, apiKey));
-
+    ).map(async (v) => await seriesToHighlight(v, host, apiKey))
+  )
   return {
-    results: [],
-    isLastPage: true,
+    results,
+    isLastPage: results.length < RESULT_COUNT,
   }
+}
+
+async function fetchFilterOptions(
+  libraryId?: string
+): Promise<DirectoryFilter[]> {
+  const genres = await getGenres(libraryId ? [libraryId] : undefined)
+  const peoples = await getPeoples(libraryId ? [libraryId] : undefined)
+  const tags = await getTags(libraryId ? [libraryId] : undefined)
+  const languages = await getLanguages(libraryId ? [libraryId] : undefined)
+
+  return [
+    {
+      id: "genres",
+      title: "Genres",
+      type: FilterType.EXCLUDABLE_MULTISELECT,
+      options: genres.map((genre) => ({
+        id: genre.id?.toString() ?? "",
+        title: genre.title ?? "Untitled",
+      })),
+    },
+    {
+      id: "languages",
+      title: "Languages",
+      type: FilterType.MULTISELECT,
+      options: languages.map((lang) => ({
+        id: lang.isoCode ?? "",
+        title: lang.title ?? "Untitled",
+      })),
+    },
+    {
+      id: "peoples",
+      title: "People",
+      type: FilterType.SELECT,
+      options: peoples.map((person) => ({
+        id: person.id?.toString() ?? "",
+        title: person.name ?? "Untitled",
+      })),
+    },
+    {
+      id: "tags",
+
+      title: "Tags",
+      type: FilterType.EXCLUDABLE_MULTISELECT,
+      options: tags.map((tag) => ({
+        id: tag.id?.toString() ?? "",
+        title: tag.title ?? "Untitled",
+      })),
+    },
+  ]
 }

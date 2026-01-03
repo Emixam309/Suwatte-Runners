@@ -22,11 +22,16 @@ import { KavitaStore } from "../store"
 export const KavitaPageLinkResolver: PageLinkResolver = {
   getSectionsForPage: async function (link: PageLink): Promise<PageSection[]> {
     switch (link.id) {
-      case "all":
       case "home":
-      case "library": {
-        return buildBrowseLibrarySections()
-      }
+        return buildHomeLibrarySections()
+      case "library":
+        return [
+          {
+            id: "all_series",
+            title: "Series",
+            style: SectionStyle.STANDARD_GRID,
+          },
+        ]
     }
 
     throw new Error(`No Handler Providing sections for ${link.id}`)
@@ -36,8 +41,11 @@ export const KavitaPageLinkResolver: PageLinkResolver = {
     sectionID: string
   ): Promise<ResolvedPageSection> {
     switch (link.id) {
-      case "all":
-      case "home":
+      case "home": {
+        const libraryId =
+          (link.context?.libraryId as string | undefined) ?? null
+        return resolveLibrarySection(libraryId, sectionID)
+      }
       case "library": {
         const libraryId =
           (link.context?.libraryId as string | undefined) ?? null
@@ -50,7 +58,7 @@ export const KavitaPageLinkResolver: PageLinkResolver = {
 }
 
 // Library Sections
-async function buildBrowseLibrarySections() {
+async function buildHomeLibrarySections() {
   const sections: PageSection[] = []
 
   const dashboardSections = await getDashboardSections()
@@ -75,53 +83,7 @@ async function resolveLibrarySection(
   const host = await getHost()
   const apiKey = await getApiKey()
 
-  const convertSeriesToItems = async (key: "new" | "updated") => {
-    const openAsTitle = await KavitaStore.openSeriesAsTitle()
-
-    const series = await getLibrarySeries(libraryId)
-
-    const highlights: Highlight[] = (series ?? []).map((data) =>
-      seriesToHighlight(data, host, apiKey, !openAsTitle)
-    )
-    return highlights
-  }
-
   switch (sectionKey) {
-    case "search_directory": {
-      const highlights = [
-        Generate<Highlight>({
-          title: "All Books",
-          cover: "",
-          id: "all_books",
-          link: {
-            request: {
-              page: 1,
-              context: {
-                isSeriesDirectory: false,
-                libraryId,
-              },
-            },
-          },
-        }),
-
-        Generate<Highlight>({
-          title: "All Series",
-          cover: "",
-          id: "all_series",
-          link: {
-            request: {
-              page: 1,
-              context: {
-                isSeriesDirectory: true,
-                libraryId,
-              },
-            },
-          },
-        }),
-      ]
-      items = highlights
-      break
-    }
     // case "keep_reading": {
     //   const highlights = await getBooksForLibrary(
     //     libraryId,
@@ -133,23 +95,17 @@ async function resolveLibrarySection(
     // }
     case "on-deck": {
       const series = await getOnDeckSeries(libraryId)
-      items = series.map((data) =>
-        seriesToHighlight(data, host, apiKey, false)
-      )
+      items = await Promise.all(series.map((data) => seriesToHighlight(data, host, apiKey, true)))
       break
     }
     case "recently-updated": {
-      const series = await getRecentlyUpdatedSeries(libraryId)
-      items = series.map((data) =>
-        seriesToHighlight(data, host, apiKey, false)
-      )
+      const series = await getRecentlyUpdatedSeries()
+      items = await Promise.all(series.map((data) => seriesToHighlight(data, host, apiKey)))
       break
     }
     case "newly-added": {
-      const series = await getRecentlyAddedSeries(libraryId)
-      items = series.map((data) =>
-        seriesToHighlight(data, host, apiKey, false)
-      )
+      const series = await getRecentlyAddedSeries()
+      items = await Promise.all(series.map((data) => seriesToHighlight(data, host, apiKey)))
       break
     }
   }

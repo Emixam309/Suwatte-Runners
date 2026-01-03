@@ -31,31 +31,4 @@ export const KavitaAuthentication: RunnerAuthenticatable = {
   handleUserSignOut: async () => {
     throw "Not ready"
   },
-  // handleBasicAuth: async (identifier, password) => {
-  //   const credentials = {
-  //     username: identifier,
-  //     password,
-  //   }
-
-  //   const client = new NetworkClient()
-  //   const { data: response } = await client.request({
-  //     url: await genURL("/api/Account/login"),
-  //     method: "POST",
-  //     body: {
-  //       ...credentials,
-  //       apiKey: await getApiKey(),
-  //     },
-  //   })
-
-  //   console.log(response)
-
-  //   // Try Fetching User to verify
-  //   await client.request({
-  //     url: await genURL("/api/Account"),
-  //   })
-
-  //   // Set Props
-  //   await ObjectStore.set("authenticated", true)
-  //   await SecureStore.set("credentials", credentials)
-  // },
 }

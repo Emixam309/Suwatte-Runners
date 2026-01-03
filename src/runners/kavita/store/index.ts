@@ -1,8 +1,9 @@
 export const KavitaStore = {
   host: () => ObjectStore.string("host"),
-  apiKey: () => ObjectStore.string("apiKey"),
-  credentials: () => SecureStore.string("credentials"),
+  apiKey: () => SecureStore.string("apiKey"),
   jwt: () => SecureStore.string("jwt"),
   authenticated: () => ObjectStore.get("authenticated"),
-  openSeriesAsTitle: () => ObjectStore.boolean("openAsTitle"),
+  continuePointCover: () => ObjectStore.boolean("continuePointCover"),
+  enableLogging: () => ObjectStore.boolean("enableLogging"),
+  clearCache: () => ObjectStore.boolean("clearCache"),
 };
